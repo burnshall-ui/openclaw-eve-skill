@@ -132,6 +132,46 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 For contracts, fittings, mail, industry, killmails, market orders, mining, planetary interaction, loyalty points, notifications, blueprints, standings, and all other character endpoints, see [references/endpoints.md](references/endpoints.md).
 
+## Dashboard Config
+
+The skill supports a modular dashboard config for alerts, reports, and market tracking. Each user defines what they need in a JSON config file.
+
+- **Schema**: [config/schema.json](config/schema.json) — full JSON Schema with all fields, types, and defaults
+- **Example**: [config/example-config.json](config/example-config.json) — ready-to-use template
+
+### Features
+
+| Module | Description |
+|--------|-------------|
+| **Alerts** | Real-time polling for war decs, structure attacks, skill completions, wallet changes, industry jobs, PI extractors, killmails, contracts, clone jumps, mail |
+| **Reports** | Cron-scheduled summaries: net worth, skill queue, industry, market orders, wallet, assets |
+| **Market** | Price tracking with absolute thresholds and trend detection |
+
+### Security
+
+Tokens should **not** be stored in plain text. Use environment variable references:
+
+```json
+{
+  "token": "$ENV:EVE_TOKEN_MAIN",
+  "refresh_token": "$ENV:EVE_REFRESH_MAIN"
+}
+```
+
+The config file should live outside the workspace (e.g. `~/.openclaw/eve-dashboard-config.json`).
+
+### Validate a config
+
+```bash
+python scripts/validate_config.py path/to/config.json
+
+# Show example config
+python scripts/validate_config.py --example
+
+# Show JSON schema
+python scripts/validate_config.py --schema
+```
+
 ## Using the query script
 
 A reusable Python script is bundled at `scripts/esi_query.py`. It handles pagination, error limits, and caching headers.
