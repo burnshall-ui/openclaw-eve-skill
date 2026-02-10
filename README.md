@@ -27,7 +27,7 @@ eve-esi/
 
 ## Installation
 
-Copy the `eve-esi/` folder into your OpenClaw skills directory.
+Copy the `eve-esi/` folder into your OpenClaw skills directory. Or ask your Agent to install it for you.
 
 ## Quick Start
 
