@@ -1,6 +1,31 @@
 ---
 name: eve-esi
 description: "Query and manage EVE Online characters via the ESI (EVE Swagger Interface) REST API. Use when the user asks about EVE Online character data, wallet balance, ISK transactions, assets, skill queue, skill points, clone locations, implants, fittings, contracts, market orders, mail, industry jobs, killmails, planetary interaction, loyalty points, or any other EVE account management task."
+env:
+  - name: EVE_CLIENT_ID
+    description: "EVE Developer Application Client ID (from https://developers.eveonline.com/applications)"
+    required: true
+    sensitive: false
+  - name: EVE_TOKEN_MAIN
+    description: "ESI OAuth2 access token for the main character. Expires after ~20 minutes."
+    required: true
+    sensitive: true
+  - name: EVE_REFRESH_MAIN
+    description: "ESI OAuth2 refresh token for automatic access token renewal."
+    required: true
+    sensitive: true
+  - name: TELEGRAM_BOT_TOKEN
+    description: "Telegram Bot API token for sending alerts and reports."
+    required: false
+    sensitive: true
+  - name: TELEGRAM_CHAT_ID
+    description: "Telegram chat ID where notifications are sent."
+    required: false
+    sensitive: false
+  - name: DISCORD_WEBHOOK_URL
+    description: "Discord webhook URL for sending alerts and reports."
+    required: false
+    sensitive: true
 ---
 
 # EVE Online ESI
