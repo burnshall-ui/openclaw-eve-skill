@@ -1,6 +1,7 @@
 ---
 name: eve-esi
 description: "Query and manage EVE Online characters via the ESI (EVE Swagger Interface) REST API. Use when the user asks about EVE Online character data, wallet balance, ISK transactions, assets, skill queue, skill points, clone locations, implants, fittings, contracts, market orders, mail, industry jobs, killmails, planetary interaction, loyalty points, or any other EVE account management task."
+primary_credential: EVE_REFRESH_MAIN
 env:
   - name: EVE_CLIENT_ID
     description: "EVE Developer Application Client ID (from https://developers.eveonline.com/applications)"
@@ -27,6 +28,12 @@ env:
     required: false
     sensitive: true
 ---
+
+# Data Handling
+
+This skill communicates exclusively with the official EVE Online ESI API (`esi.evetech.net`) and EVE SSO (`login.eveonline.com`).
+No character data is exfiltrated to third-party servers.
+Optional integrations (Telegram, Discord) are user-configured via environment variables and only transmit alerts defined by the user.
 
 # EVE Online ESI
 

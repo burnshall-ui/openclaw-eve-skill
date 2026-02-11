@@ -97,11 +97,11 @@ Add `&code_challenge=<CHALLENGE>&code_challenge_method=S256` to the authorize UR
 | Skills | `esi-skills.read_skills.v1`, `esi-skills.read_skillqueue.v1` |
 | Clones | `esi-clones.read_clones.v1`, `esi-clones.read_implants.v1` |
 | Location | `esi-location.read_location.v1`, `esi-location.read_ship_type.v1`, `esi-location.read_online.v1` |
-| Contacts | `esi-characters.read_contacts.v1`, `esi-characters.write_contacts.v1` |
+| Contacts | `esi-characters.read_contacts.v1` |
 | Contracts | `esi-contracts.read_character_contracts.v1` |
-| Fittings | `esi-fittings.read_fittings.v1`, `esi-fittings.write_fittings.v1` |
-| Mail | `esi-mail.read_mail.v1`, `esi-mail.send_mail.v1`, `esi-mail.organize_mail.v1` |
-| Calendar | `esi-calendar.read_calendar_events.v1`, `esi-calendar.respond_calendar_events.v1` |
+| Fittings | `esi-fittings.read_fittings.v1` |
+| Mail | `esi-mail.read_mail.v1` |
+| Calendar | `esi-calendar.read_calendar_events.v1` |
 | Industry | `esi-industry.read_character_jobs.v1` |
 | Market Orders | `esi-markets.read_character_orders.v1` |
 | Killmails | `esi-killmails.read_killmails.v1` |
@@ -110,7 +110,6 @@ Add `&code_challenge=<CHALLENGE>&code_challenge_method=S256` to the authorize UR
 | Bookmarks | `esi-bookmarks.read_character_bookmarks.v1` |
 | Loyalty | `esi-characters.read_loyalty.v1` |
 | Mining | `esi-industry.read_character_mining.v1` |
-| Planets (PI) | `esi-planets.manage_planets.v1` |
 | Roles | `esi-characters.read_corporation_roles.v1` |
 | Standings | `esi-characters.read_standings.v1` |
 | Fatigue | `esi-characters.read_fatigue.v1` |
