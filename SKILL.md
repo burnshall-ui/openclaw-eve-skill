@@ -43,17 +43,39 @@ The ESI (EVE Swagger Interface) is the official REST API for EVE Online third-pa
 - Spec: `https://esi.evetech.net/latest/swagger.json`
 - API Explorer: <https://developers.eveonline.com/api-explorer>
 
+## Skill Location
+
+All scripts live at: `~/.openclaw/workspace/skills/eve-esi/scripts/`
+
+Always use full paths when calling scripts:
+```bash
+SKILL=~/.openclaw/workspace/skills/eve-esi
+```
+
 ## Authentication
 
-ESI uses OAuth 2.0 via EVE SSO. Most character endpoints require an access token with the correct scope.
+Tokens are stored in `~/.openclaw/eve-tokens.json` (created by auth_flow.py).
 
-Quick flow:
-1. Register an app at <https://developers.eveonline.com/applications>
-2. Redirect user to SSO authorize URL with required scopes
-3. Exchange the auth code for access + refresh tokens
-4. Pass `Authorization: Bearer <TOKEN>` on every ESI request
+**First-time setup** (once per character):
+```bash
+# 1. Set up SSH tunnel on your local PC:
+#    ssh -L 8080:127.0.0.1:8080 canni@100.79.161.55 -N
+# 2. Run auth flow on server:
+python3 ~/.openclaw/workspace/skills/eve-esi/scripts/auth_flow.py --char-name main
+# 3. Open the shown URL in browser, log in with EVE account
+```
 
-For full details (PKCE, token refresh, scope list): see [references/authentication.md](references/authentication.md).
+**Get a fresh access token** (tokens expire after ~20min, refresh is automatic):
+```bash
+TOKEN=$(python3 ~/.openclaw/workspace/skills/eve-esi/scripts/get_token.py --char main)
+```
+
+**List authenticated characters:**
+```bash
+python3 ~/.openclaw/workspace/skills/eve-esi/scripts/get_token.py --list
+```
+
+For full OAuth2/PKCE details: see `references/authentication.md`.
 
 ## Public endpoints (no auth)
 
@@ -206,17 +228,19 @@ python scripts/validate_config.py --schema
 
 ## Using the query script
 
-A reusable Python script is bundled at `scripts/esi_query.py`. It handles pagination, error limits, and caching headers.
-
 ```bash
+SKILL=~/.openclaw/workspace/skills/eve-esi
+TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
+CHAR_ID=$(python3 $SKILL/scripts/get_token.py --char main --json | python3 -c "import sys,json; print(json.load(sys.stdin))" 2>/dev/null)
+
 # Simple query
-python scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/wallet/" --pretty
+python3 $SKILL/scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/wallet/" --pretty
 
 # Fetch all pages of assets
-python scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/assets/" --pages --pretty
+python3 $SKILL/scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/assets/" --pages --pretty
 
 # POST request (e.g. asset names)
-python scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/assets/names/" \
+python3 $SKILL/scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/assets/names/" \
   --method POST --body '[1234567890]' --pretty
 ```
 
