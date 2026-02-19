@@ -152,7 +152,7 @@ def main():
     print("EVE SSO Auth Flow")
     print(f"{'='*60}")
     print(f"\nIf running on a remote server, set up SSH tunnel first:")
-    print(f"  ssh -L {args.port}:127.0.0.1:{args.port} canni@100.79.161.55 -N")
+    print(f"  ssh -L {args.port}:127.0.0.1:{args.port} user@your-server -N")
     print(f"\nThen open this URL in your browser:")
     print(f"\n  {auth_url}\n")
     print(f"Waiting for callback on port {args.port}...")

@@ -1,19 +1,18 @@
 ---
 name: eve-esi
 description: "Query and manage EVE Online characters via the ESI (EVE Swagger Interface) REST API. Use when the user asks about EVE Online character data, wallet balance, ISK transactions, assets, skill queue, skill points, clone locations, implants, fittings, contracts, market orders, mail, industry jobs, killmails, planetary interaction, loyalty points, or any other EVE account management task."
-primary_credential: EVE_REFRESH_MAIN
 env:
   - name: EVE_CLIENT_ID
-    description: "EVE Developer Application Client ID (from https://developers.eveonline.com/applications)"
-    required: true
+    description: "EVE Developer Application Client ID (from https://developers.eveonline.com/applications). Optional: only needed if using $ENV: references in your dashboard config instead of passing --client-id to auth_flow.py directly."
+    required: false
     sensitive: false
   - name: EVE_TOKEN_MAIN
-    description: "ESI OAuth2 access token for the main character. Expires after ~20 minutes."
-    required: true
+    description: "ESI OAuth2 access token for the main character. Optional: scripts auto-manage tokens via ~/.openclaw/eve-tokens.json (written by auth_flow.py). Only set this if using $ENV: references in your dashboard config."
+    required: false
     sensitive: true
   - name: EVE_REFRESH_MAIN
-    description: "ESI OAuth2 refresh token for automatic access token renewal."
-    required: true
+    description: "ESI OAuth2 refresh token for automatic access token renewal. Optional: scripts auto-manage tokens via ~/.openclaw/eve-tokens.json. Only set this if using $ENV: references in your dashboard config."
+    required: false
     sensitive: true
   - name: TELEGRAM_BOT_TOKEN
     description: "Telegram Bot API token for sending alerts and reports."
@@ -54,14 +53,15 @@ SKILL=~/.openclaw/workspace/skills/eve-esi
 
 ## Authentication
 
-Tokens are stored in `~/.openclaw/eve-tokens.json` (created by auth_flow.py).
+Tokens are stored in `~/.openclaw/eve-tokens.json` (created by auth_flow.py, chmod 600).
+All scripts (`get_token.py`, `esi_query.py`) read from this file directly — **no env vars are required for normal operation.**
 
 **First-time setup** (once per character):
 ```bash
 # 1. Set up SSH tunnel on your local PC:
-#    ssh -L 8080:127.0.0.1:8080 canni@100.79.161.55 -N
-# 2. Run auth flow on server:
-python3 ~/.openclaw/workspace/skills/eve-esi/scripts/auth_flow.py --char-name main
+#    ssh -L 8080:127.0.0.1:8080 user@your-server -N
+# 2. Run auth flow on server (pass Client ID directly):
+python3 ~/.openclaw/workspace/skills/eve-esi/scripts/auth_flow.py --client-id <YOUR_CLIENT_ID> --char-name main
 # 3. Open the shown URL in browser, log in with EVE account
 ```
 
