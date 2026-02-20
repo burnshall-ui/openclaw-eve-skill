@@ -4,26 +4,29 @@ An [OpenClaw](https://openclaw.ai) skill for interacting with the [EVE Online ES
 
 ## Features
 
-- **Authentication** — PKCE OAuth2 flow via EVE SSO, auto-refreshing tokens
-- **ESI Queries** — reusable Python helper with pagination, error limits, and caching
-- **Multi-character** — store and manage tokens for multiple characters
-- **Dashboard Config** — modular alert/report/market-tracking config schema
-- **Reference docs** — full scope list, endpoint index, auth flow details
+- **PKCE Authentication** — Secure OAuth2 flow via EVE SSO, auto-refreshing tokens
+- **Multi-Character** — Store and manage tokens for unlimited characters
+- **PI Monitoring** — Planetary Interaction status, extractor timers, storage fill levels
+- **Market Prices** — Global average prices and Jita buy/sell lookups
+- **ESI Queries** — Reusable Python helper with pagination, rate-limit handling, and error recovery
+- **Dashboard Config** — Modular alert/report/market-tracking config with JSON Schema
 
 ## Structure
 
 ```
 eve-esi/
-├── SKILL.md                        # OpenClaw skill instructions
+├── SKILL.md                        # OpenClaw skill instructions (loaded by agent)
 ├── README.md                       # This file
+├── .gitignore                      # Prevents token/secret commits
 ├── scripts/
-│   ├── auth_flow.py                # One-time EVE SSO OAuth2 authentication
-│   ├── get_token.py                # Token refresh helper (auto-rotates)
-│   ├── esi_query.py                # ESI query helper with pagination
+│   ├── auth_flow.py                # One-time EVE SSO OAuth2 PKCE authentication
+│   ├── get_token.py                # Token refresh helper (auto-rotates on every use)
+│   ├── esi_query.py                # ESI query helper + high-level PI/market actions
 │   └── validate_config.py          # Dashboard config validator
 ├── config/
 │   ├── schema.json                 # JSON Schema for dashboard config
-│   └── example-config.json         # Ready-to-use template
+│   ├── example-config.json         # Ready-to-use template
+│   └── esi_endpoints.json          # PI and market endpoint definitions
 └── references/
     ├── authentication.md           # EVE SSO OAuth2 + PKCE details
     └── endpoints.md                # All character endpoints + scopes
@@ -36,14 +39,18 @@ cd ~/.openclaw/workspace/skills
 git clone https://github.com/burnshall-ui/openclaw-eve-skill eve-esi
 ```
 
+No pip dependencies — uses Python 3.8+ stdlib only.
+
 ## Authentication Setup
 
-**Prerequisites:**
+### Prerequisites
+
 1. Register an app at [developers.eveonline.com](https://developers.eveonline.com/applications)
 2. Set callback URL to `http://127.0.0.1:8080/callback`
-3. Note your **Client ID**
+3. Select the scopes you need (PI requires `esi-planets.manage_planets.v1`)
+4. Note your **Client ID**
 
-**One-time auth per character** (requires browser access):
+### One-time auth per character
 
 ```bash
 # If on a remote server, set up an SSH tunnel first:
@@ -55,11 +62,16 @@ python3 scripts/auth_flow.py --client-id <YOUR_CLIENT_ID> --char-name main
 # Open the shown URL in your browser and log in with your EVE account
 ```
 
-Tokens are stored in `~/.openclaw/eve-tokens.json` (chmod 600).
+Tokens are stored in `~/.openclaw/eve-tokens.json` (chmod 600, auto-rotated).
 
-**Authenticate additional characters:**
+### Multiple characters
+
 ```bash
 python3 scripts/auth_flow.py --client-id <CLIENT_ID> --char-name alt1
+python3 scripts/auth_flow.py --client-id <CLIENT_ID> --char-name alt2
+
+# List all authenticated characters:
+python3 scripts/get_token.py --list
 ```
 
 ## Quick Start
@@ -69,9 +81,6 @@ SKILL=~/.openclaw/workspace/skills/eve-esi
 
 # Get a fresh access token (auto-refreshes on every call)
 TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
-
-# List all authenticated characters
-python3 $SKILL/scripts/get_token.py --list
 
 # Wallet balance
 python3 $SKILL/scripts/esi_query.py --token "$TOKEN" \
@@ -86,6 +95,67 @@ python3 $SKILL/scripts/esi_query.py --token "$TOKEN" \
   --endpoint "/characters/<CHAR_ID>/assets/" --pages --pretty
 ```
 
+## Planetary Interaction (PI)
+
+The skill includes high-level PI actions that parse raw ESI data into actionable status reports.
+
+### PI Actions
+
+```bash
+SKILL=~/.openclaw/workspace/skills/eve-esi
+TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
+CHAR_ID=<your_character_id>
+
+# List all PI planets for a character
+python3 $SKILL/scripts/esi_query.py --action pi_planets \
+  --token "$TOKEN" --character-id $CHAR_ID --pretty
+
+# Full PI status with extractor timers, storage fill, attention flags
+python3 $SKILL/scripts/esi_query.py --action pi_status \
+  --token "$TOKEN" --character-id $CHAR_ID --pretty
+
+# Detailed info for a specific planet
+python3 $SKILL/scripts/esi_query.py --action pi_planet_detail \
+  --token "$TOKEN" --character-id $CHAR_ID --planet-id <PLANET_ID> --pretty
+```
+
+### PI Status Output
+
+The `pi_status` action returns parsed data per planet:
+
+| Field | Description |
+|-------|-------------|
+| `planet_name` | Resolved planet name (e.g. "Ikoskio VII") |
+| `extractors` | List with product, expiry time, hours remaining, status |
+| `storage_fill_pct` | Estimated launchpad/storage fill percentage |
+| `factories` | Input/output product routing |
+| `needs_attention` | `true` if extractor < 6h or storage > 80% |
+| `action_required` | Human-readable description of what needs to be done |
+
+### What PI can and cannot do
+
+ESI provides **read-only** access to PI. The skill can:
+- Monitor extractor timers and warn before expiry
+- Track launchpad/storage fill levels
+- Show factory routing and production chains
+- Compare market prices for PI products
+
+It **cannot** restart extractors, reroute products, or modify planet setups — that must be done in-game.
+
+## Market Prices
+
+```bash
+SKILL=~/.openclaw/workspace/skills/eve-esi
+
+# Global average/adjusted prices for all items
+python3 $SKILL/scripts/esi_query.py --action market_price_bulk --pretty
+
+# Current Jita buy/sell for a specific item (e.g. Coolant = type_id 9832)
+python3 $SKILL/scripts/esi_query.py --action jita_price --type-id 9832 --pretty
+```
+
+The `jita_price` action returns lowest sell, highest buy, spread, and order counts for The Forge region.
+
 ## Dashboard Config
 
 Set up automated alerts, scheduled reports, and market price tracking:
@@ -94,7 +164,7 @@ Set up automated alerts, scheduled reports, and market price tracking:
 # Copy example config
 cp config/example-config.json ~/.openclaw/eve-dashboard-config.json
 
-# Edit with your character IDs and preferences
+# Edit with your preferences
 # Use $ENV:VARIABLE_NAME for tokens — never store secrets in plain text
 
 # Validate
@@ -109,7 +179,6 @@ See [config/schema.json](config/schema.json) for the full schema.
 |-------|-------------|
 | `war_declared` | New war declaration against your corp |
 | `structure_under_attack` | Structure attacked |
-| `structure_fuel_low` | Fuel below threshold (hours) |
 | `skill_complete` | Skill training finished |
 | `wallet_large_deposit` | ISK deposit above threshold |
 | `industry_job_complete` | Manufacturing/research job done |
@@ -132,17 +201,44 @@ See [config/schema.json](config/schema.json) for the full schema.
 
 - Tokens stored in `~/.openclaw/eve-tokens.json` with `chmod 600`
 - Refresh tokens rotate on every use (EVE SSO best practice)
+- PKCE flow — no client secret needed
 - Dashboard config supports `$ENV:VARIABLE_NAME` to keep secrets out of files
-- Never commit `eve-tokens.json` or configs with real tokens
+- `.gitignore` prevents accidental token commits
+- **Never commit** `eve-tokens.json` or configs with real tokens
+
+## Scopes
+
+The default auth flow requests these scopes:
+
+| Scope | Purpose |
+|-------|---------|
+| `esi-wallet.read_character_wallet.v1` | ISK balance, journal, transactions |
+| `esi-assets.read_assets.v1` | Item inventory |
+| `esi-skills.read_skills.v1` | Trained skills, SP |
+| `esi-skills.read_skillqueue.v1` | Skill queue |
+| `esi-clones.read_clones.v1` | Jump clones, home station |
+| `esi-clones.read_implants.v1` | Active implants |
+| `esi-location.read_location.v1` | Current system/station |
+| `esi-location.read_ship_type.v1` | Current ship |
+| `esi-location.read_online.v1` | Online status |
+| `esi-planets.manage_planets.v1` | PI colonies and extractors |
+| `esi-industry.read_character_jobs.v1` | Industry jobs |
+| `esi-markets.read_character_orders.v1` | Market orders |
+| `esi-contracts.read_character_contracts.v1` | Contracts |
+| `esi-killmails.read_killmails.v1` | Killmails |
+| `esi-characters.read_notifications.v1` | Notifications |
+| `esi-characters.read_fatigue.v1` | Jump fatigue |
+| `esi-mail.read_mail.v1` | EVE mail |
+
+Edit `SCOPES` in `auth_flow.py` to customize.
 
 ## Requirements
 
 - Python 3.8+ (stdlib only — no pip dependencies)
-- OpenClaw gateway
+- OpenClaw gateway (for agent integration)
 
 ## Links
 
 - [EVE ESI API Explorer](https://developers.eveonline.com/api-explorer)
 - [EVE Developer Portal](https://developers.eveonline.com/applications)
 - [OpenClaw Docs](https://docs.openclaw.ai)
-- [ClawHub Skill Page](https://clawhub.ai/burnshall-ui/eve-esi)

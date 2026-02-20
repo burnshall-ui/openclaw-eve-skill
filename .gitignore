@@ -1,0 +1,18 @@
+# Tokens and secrets — NEVER commit these
+eve-tokens.json
+*tokens*.json
+*credentials*
+*.secret
+.env
+
+# Dashboard config (may contain token references)
+eve-dashboard-config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
