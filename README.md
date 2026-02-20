@@ -234,8 +234,28 @@ Edit `SCOPES` in `auth_flow.py` to customize.
 
 ## Requirements
 
-- Python 3.8+ (stdlib only — no pip dependencies)
+- Python 3.8+ (stdlib only for core ESI queries)
 - OpenClaw gateway (for agent integration)
+- **Redis** (optional, for PI market price caching)
+- **Python `redis` package** (optional, only needed for price cache)
+
+### Redis Setup (optional)
+
+Redis is used to cache PI market prices with a 1-hour TTL. Without it, market prices are fetched live from ESI on every request.
+
+```bash
+# Install Redis
+sudo apt install redis-server
+sudo systemctl enable redis-server
+
+# Install Python redis package
+pip3 install redis
+
+# Test
+redis-cli ping   # → PONG
+```
+
+The companion script `cache_market_prices.py` (not part of this repo, lives in the agent workspace) fetches PI product prices from ESI and caches them in Redis under the key schema `eve:market:price:{type_id}`.
 
 ## Links
 
