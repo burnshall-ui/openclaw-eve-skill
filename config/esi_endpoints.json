@@ -1,0 +1,38 @@
+{
+  "pi_planets": {
+    "path": "/characters/{character_id}/planets/",
+    "method": "GET",
+    "auth": true,
+    "scope": "esi-planets.manage_planets.v1",
+    "description": "Liste aller PI-Planeten eines Characters"
+  },
+  "pi_planet_detail": {
+    "path": "/characters/{character_id}/planets/{planet_id}/",
+    "method": "GET",
+    "auth": true,
+    "scope": "esi-planets.manage_planets.v1",
+    "description": "Extraktoren, Factories, Links und Routes eines Planeten"
+  },
+  "universe_planet": {
+    "path": "/universe/planets/{planet_id}/",
+    "method": "GET",
+    "auth": false,
+    "description": "Planet-Metadaten (Name, Typ, System)"
+  },
+  "market_prices": {
+    "path": "/markets/prices/",
+    "method": "GET",
+    "auth": false,
+    "description": "Alle adjusted/average Preise (global)"
+  },
+  "market_orders": {
+    "path": "/markets/10000002/orders/",
+    "method": "GET",
+    "auth": false,
+    "params": [
+      "type_id",
+      "order_type"
+    ],
+    "description": "Jita Buy/Sell Orders fuer ein bestimmtes Item"
+  }
+}
