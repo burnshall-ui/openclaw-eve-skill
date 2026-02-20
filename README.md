@@ -9,6 +9,8 @@ An [OpenClaw](https://openclaw.ai) skill for interacting with the [EVE Online ES
 - **PI Monitoring** — Planetary Interaction status, extractor timers, storage fill levels
 - **Market Prices** — Global average prices and Jita buy/sell lookups
 - **ESI Queries** — Reusable Python helper with pagination, rate-limit handling, and error recovery
+- **Threat Assessment** — System threat scoring using ESI kills/jumps + zKillboard PVP data
+- **Route Planning** — Annotated routes with per-system threat levels
 - **Dashboard Config** — Modular alert/report/market-tracking config with JSON Schema
 
 ## Structure
@@ -196,6 +198,60 @@ See [config/schema.json](config/schema.json) for the full schema.
 | `market_orders` | Open buy/sell orders |
 | `wallet_summary` | Recent transaction summary |
 | `assets_summary` | Top asset locations by value |
+
+## Threat Assessment & Route Planning
+
+The skill provides threat intelligence for PI operations in low/null-sec systems.
+
+### Data Sources
+
+| Source | Data | Auth |
+|--------|------|------|
+| ESI `/universe/system_kills/` | Ship/Pod/NPC kills (last hour) | No |
+| ESI `/universe/system_jumps/` | Jump traffic (last hour) | No |
+| ESI `/route/{origin}/{destination}/` | Route planning | No |
+| ESI `/fw/systems/` | Faction Warfare contested systems | No |
+| ESI `/incursions/` | Active NPC incursions | No |
+| zKillboard API | PVP kills with value (last 24h) | No |
+
+### Threat Levels
+
+| Level | Score | Advice |
+|-------|-------|--------|
+| `low` | 0-15 | Normal PI operations |
+| `medium` | 15-40 | Quick in, quick out |
+| `high` | 40-80 | Scout/Cloak only |
+| `critical` | 80+ | Do NOT enter |
+
+### ESI Actions
+
+```bash
+SKILL=~/.openclaw/workspace/skills/eve-esi
+
+# System kills (last hour, optionally filtered)
+python3 $SKILL/scripts/esi_query.py --action system_kills --system-ids 30002537 --pretty
+
+# System jump traffic
+python3 $SKILL/scripts/esi_query.py --action system_jumps --system-ids 30002537 --pretty
+
+# System info (name, security status)
+python3 $SKILL/scripts/esi_query.py --action system_info --system-id 30002537 --pretty
+
+# Route planning
+python3 $SKILL/scripts/esi_query.py --action route_plan --origin 30000142 --destination 30002537 --route-flag secure --pretty
+
+# Character location
+TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
+python3 $SKILL/scripts/esi_query.py --action character_location --token "$TOKEN" --character-id $CHAR_ID --pretty
+
+# FW systems & incursions
+python3 $SKILL/scripts/esi_query.py --action fw_systems --pretty
+python3 $SKILL/scripts/esi_query.py --action incursions --pretty
+```
+
+### Threat Assessment (Workspace Scripts)
+
+The threat scoring logic and caching live in the agent workspace (`~/.openclaw/workspace/scripts/`), not in this repo. See `SKILL.md` for usage details.
 
 ## Security
 

@@ -253,6 +253,81 @@ python3 $SKILL/scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CH
 - **Pagination**: check the `X-Pages` response header; iterate with `?page=N`.
 - **Versioning**: use `/latest/` for current stable routes. `/dev/` may change without notice.
 
+## Threat Assessment & Route Planning
+
+The skill provides threat intelligence for PI systems in low/null-sec space. Data sources: ESI (kills, jumps, FW, incursions) and zKillboard (PVP activity).
+
+### ESI Threat Endpoints
+
+```bash
+SKILL=~/.openclaw/workspace/skills/eve-esi
+
+# System kills (last hour) — all or filtered
+python3 $SKILL/scripts/esi_query.py --action system_kills --pretty
+python3 $SKILL/scripts/esi_query.py --action system_kills --system-ids 30002537,30045337 --pretty
+
+# System jump traffic (last hour)
+python3 $SKILL/scripts/esi_query.py --action system_jumps --system-ids 30045337 --pretty
+
+# System info (name, security status)
+python3 $SKILL/scripts/esi_query.py --action system_info --system-id 30002537 --pretty
+
+# Route planning (flags: secure, shortest, insecure)
+python3 $SKILL/scripts/esi_query.py --action route_plan --origin 30000142 --destination 30002537 --route-flag secure --pretty
+
+# Character location (requires auth)
+TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
+python3 $SKILL/scripts/esi_query.py --action character_location --token "$TOKEN" --character-id $CHAR_ID --pretty
+
+# Faction warfare systems
+python3 $SKILL/scripts/esi_query.py --action fw_systems --pretty
+
+# Active incursions
+python3 $SKILL/scripts/esi_query.py --action incursions --pretty
+```
+
+### Threat Assessment Scripts (Workspace)
+
+These scripts live in `~/.openclaw/workspace/scripts/` (not in the skill repo):
+
+```bash
+# Threat level for specific systems
+python3 ~/.openclaw/workspace/scripts/threat_query.py --action threat_assessment --system-ids 30002537,30045337
+
+# Threat for all PI systems across all characters
+python3 ~/.openclaw/workspace/scripts/threat_query.py --action threat_assessment_pi
+
+# Route with per-system threat annotation
+python3 ~/.openclaw/workspace/scripts/threat_query.py --action route_annotated --origin 30000142 --destination 30002537
+
+# Route from character's current location
+python3 ~/.openclaw/workspace/scripts/threat_query.py --action route_annotated --character main --destination 30045337
+
+# Full PI + Threat morning briefing
+python3 ~/.openclaw/workspace/scripts/threat_query.py --action pi_briefing
+```
+
+### Threat Levels
+
+| Level | Score | Meaning |
+|-------|-------|---------|
+| `low` | 0-15 | Normaler PI-Betrieb |
+| `medium` | 15-40 | Schnell rein, schnell raus |
+| `high` | 40-80 | Nur mit Scout/Cloak |
+| `critical` | 80+ | NICHT reinfliegen |
+
+### Threat Cache
+
+Threat data is cached in Redis (30min TTL for ESI, 1h for zKillboard). The cache is updated every 30 minutes via cron:
+
+```bash
+# Update cache manually
+python3 ~/.openclaw/workspace/scripts/cache_threat_data.py
+
+# Show cached threat data
+python3 ~/.openclaw/workspace/scripts/cache_threat_data.py --check
+```
+
 ## Resolving type IDs
 
 ESI returns numeric type IDs (e.g. for ships, items, skills). Resolve names via:

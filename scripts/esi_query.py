@@ -221,6 +221,76 @@ def get_universe_planet(planet_id: int) -> dict:
     return {}
 
 
+def get_system_kills(system_ids: list[int] | None = None) -> list:
+    """Fetch ship/pod/NPC kills per system (last hour). Optionally filter by system IDs."""
+    result, _ = esi_request("/universe/system_kills/", token=None)
+    if not isinstance(result, list):
+        return []
+    if system_ids:
+        id_set = set(system_ids)
+        return [s for s in result if isinstance(s, dict) and s.get("system_id") in id_set]
+    return result
+
+
+def get_system_jumps(system_ids: list[int] | None = None) -> list:
+    """Fetch jump traffic per system (last hour). Optionally filter by system IDs."""
+    result, _ = esi_request("/universe/system_jumps/", token=None)
+    if not isinstance(result, list):
+        return []
+    if system_ids:
+        id_set = set(system_ids)
+        return [s for s in result if isinstance(s, dict) and s.get("system_id") in id_set]
+    return result
+
+
+def get_route(origin: int, destination: int, flag: str = "secure", avoid: list[int] | None = None) -> list:
+    """Plan a route between two systems. flag: shortest, secure, insecure."""
+    endpoint = f"/route/{origin}/{destination}/"
+    params: dict[str, Any] = {"flag": flag}
+    if avoid:
+        # ESI accepts avoid as repeated query params
+        avoid_str = ",".join(str(s) for s in avoid)
+        params["avoid"] = avoid_str
+    result, _ = esi_request(endpoint, token=None, params=params)
+    if isinstance(result, list):
+        return result
+    return []
+
+
+def get_system_info(system_id: int) -> dict:
+    """Fetch public system info (name, security status, constellation, star)."""
+    endpoint = f"/universe/systems/{system_id}/"
+    result, _ = esi_request(endpoint, token=None, allow_404=True)
+    if isinstance(result, dict):
+        return result
+    return {}
+
+
+def get_character_location(character_id: int, token: str) -> dict:
+    """Fetch current location of a character (requires auth)."""
+    endpoint = f"/characters/{character_id}/location/"
+    result, _ = esi_request(endpoint, token=token)
+    if isinstance(result, dict):
+        return result
+    return {}
+
+
+def get_incursions() -> list:
+    """Fetch active NPC incursions."""
+    result, _ = esi_request("/incursions/", token=None)
+    if isinstance(result, list):
+        return result
+    return []
+
+
+def get_fw_systems() -> list:
+    """Fetch faction warfare contested systems."""
+    result, _ = esi_request("/fw/systems/", token=None)
+    if isinstance(result, list):
+        return result
+    return []
+
+
 def get_market_price_bulk() -> list:
     """Fetch bulk adjusted/average prices for all item types."""
     result, _ = esi_request("/markets/prices/", token=None, method="GET")
@@ -429,7 +499,7 @@ def get_pi_status(character_id: int, token: str) -> list[dict]:
 
 def run_action(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Any:
     """Execute high-level action mode."""
-    if args.action in {"pi_planets", "pi_planet_detail", "pi_status"}:
+    if args.action in {"pi_planets", "pi_planet_detail", "pi_status", "character_location"}:
         if not args.token:
             parser.error(f"--token is required for action '{args.action}'")
         if args.character_id is None:
@@ -458,6 +528,45 @@ def run_action(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Any
             parser.error("--type-id is required for action 'jita_price'")
         return get_jita_price(type_id=args.type_id)
 
+    if args.action == "system_kills":
+        ids = None
+        if args.system_ids:
+            ids = [int(x) for x in args.system_ids.split(",")]
+        return get_system_kills(system_ids=ids)
+
+    if args.action == "system_jumps":
+        ids = None
+        if args.system_ids:
+            ids = [int(x) for x in args.system_ids.split(",")]
+        return get_system_jumps(system_ids=ids)
+
+    if args.action == "route_plan":
+        if args.origin is None or args.destination is None:
+            parser.error("--origin and --destination are required for action 'route_plan'")
+        avoid = None
+        if args.avoid:
+            avoid = [int(x) for x in args.avoid.split(",")]
+        return get_route(
+            origin=args.origin,
+            destination=args.destination,
+            flag=args.route_flag or "secure",
+            avoid=avoid,
+        )
+
+    if args.action == "system_info":
+        if args.system_id is None:
+            parser.error("--system-id is required for action 'system_info'")
+        return get_system_info(system_id=args.system_id)
+
+    if args.action == "character_location":
+        return get_character_location(character_id=args.character_id, token=args.token)
+
+    if args.action == "incursions":
+        return get_incursions()
+
+    if args.action == "fw_systems":
+        return get_fw_systems()
+
     parser.error(f"Unsupported action: {args.action}")
     return None
 
@@ -476,12 +585,25 @@ def main():
 
     parser.add_argument(
         "--action",
-        choices=["pi_planets", "pi_planet_detail", "pi_status", "market_price_bulk", "jita_price"],
+        choices=[
+            "pi_planets", "pi_planet_detail", "pi_status",
+            "market_price_bulk", "jita_price",
+            "system_kills", "system_jumps", "route_plan",
+            "system_info", "character_location",
+            "incursions", "fw_systems",
+        ],
         help="Run a high-level helper action instead of raw endpoint mode",
     )
     parser.add_argument("--character-id", type=int, help="EVE character ID for PI actions")
     parser.add_argument("--planet-id", type=int, help="Planet ID for pi_planet_detail")
     parser.add_argument("--type-id", type=int, help="Type ID for jita_price")
+    parser.add_argument("--system-ids", type=str, help="Comma-separated system IDs for kill/jump filtering")
+    parser.add_argument("--system-id", type=int, help="Single system ID for system_info")
+    parser.add_argument("--origin", type=int, help="Origin system ID for route_plan")
+    parser.add_argument("--destination", type=int, help="Destination system ID for route_plan")
+    parser.add_argument("--route-flag", choices=["shortest", "secure", "insecure"], default="secure",
+                        help="Route preference (default: secure)")
+    parser.add_argument("--avoid", type=str, help="Comma-separated system IDs to avoid in route")
     args = parser.parse_args()
 
     if args.action:

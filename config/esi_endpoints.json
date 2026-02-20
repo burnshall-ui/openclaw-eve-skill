@@ -34,5 +34,42 @@
       "order_type"
     ],
     "description": "Jita Buy/Sell Orders fuer ein bestimmtes Item"
+  },
+  "system_kills": {
+    "path": "/universe/system_kills/",
+    "method": "GET",
+    "auth": false,
+    "description": "Ship/Pod/NPC Kills pro System (letzte Stunde)"
+  },
+  "system_jumps": {
+    "path": "/universe/system_jumps/",
+    "method": "GET",
+    "auth": false,
+    "description": "Jump-Traffic pro System (letzte Stunde)"
+  },
+  "route": {
+    "path": "/route/{origin}/{destination}/",
+    "method": "GET",
+    "auth": false,
+    "params": ["flag"],
+    "description": "Routenplanung (flags: shortest, secure, insecure)"
+  },
+  "system_info": {
+    "path": "/universe/systems/{system_id}/",
+    "method": "GET",
+    "auth": false,
+    "description": "System-Name, Security-Status, Constellation, Star"
+  },
+  "incursions": {
+    "path": "/incursions/",
+    "method": "GET",
+    "auth": false,
+    "description": "Aktive NPC-Incursions (Constellation, Staging System, State)"
+  },
+  "fw_systems": {
+    "path": "/fw/systems/",
+    "method": "GET",
+    "auth": false,
+    "description": "Faction-Warfare umkaempfte Systeme mit Ownership/Contested-Level"
   }
 }
