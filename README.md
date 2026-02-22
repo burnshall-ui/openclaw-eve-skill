@@ -4,6 +4,7 @@ An [OpenClaw](https://openclaw.ai) skill for interacting with the [EVE Online ES
 
 ## Features
 
+<<<<<<< HEAD
 - **PKCE Authentication** — Secure OAuth2 flow via EVE SSO, auto-refreshing tokens
 - **Multi-Character** — Store and manage tokens for unlimited characters
 - **PI Monitoring** — Planetary Interaction status, extractor timers, storage fill levels
@@ -12,6 +13,14 @@ An [OpenClaw](https://openclaw.ai) skill for interacting with the [EVE Online ES
 - **Threat Assessment** — System threat scoring using ESI kills/jumps + zKillboard PVP data
 - **Route Planning** — Annotated routes with per-system threat levels
 - **Dashboard Config** — Modular alert/report/market-tracking config with JSON Schema
+=======
+- **Authentication** — PKCE OAuth2 flow via EVE SSO, auto-refreshing tokens
+- **ESI Queries** — reusable Python helper with pagination, error limits, and caching
+- **PI + Market Actions** — built-in actions for PI planet status and Jita price snapshots
+- **Multi-character** — store and manage tokens for multiple characters
+- **Dashboard Config** — modular alert/report/market-tracking config schema
+- **Reference docs** — full scope list, endpoint index, auth flow details
+>>>>>>> 37636f5 (docs: update README for PI action workflow)
 
 ## Structure
 
@@ -21,14 +30,23 @@ eve-esi/
 ├── README.md                       # This file
 ├── .gitignore                      # Prevents token/secret commits
 ├── scripts/
+<<<<<<< HEAD
 │   ├── auth_flow.py                # One-time EVE SSO OAuth2 PKCE authentication
 │   ├── get_token.py                # Token refresh helper (auto-rotates on every use)
+=======
+│   ├── auth_flow.py                # One-time EVE SSO OAuth2 authentication
+│   ├── get_token.py                # Token refresh helper (auto-rotates)
+>>>>>>> 37636f5 (docs: update README for PI action workflow)
 │   ├── esi_query.py                # ESI query helper + high-level PI/market actions
 │   └── validate_config.py          # Dashboard config validator
 ├── config/
 │   ├── schema.json                 # JSON Schema for dashboard config
 │   ├── example-config.json         # Ready-to-use template
+<<<<<<< HEAD
 │   └── esi_endpoints.json          # PI and market endpoint definitions
+=======
+│   └── esi_endpoints.json          # Endpoint catalog (PI + market helpers)
+>>>>>>> 37636f5 (docs: update README for PI action workflow)
 └── references/
     ├── authentication.md           # EVE SSO OAuth2 + PKCE details
     └── endpoints.md                # All character endpoints + scopes
@@ -95,8 +113,24 @@ python3 $SKILL/scripts/esi_query.py --token "$TOKEN" \
 # All assets (paginated)
 python3 $SKILL/scripts/esi_query.py --token "$TOKEN" \
   --endpoint "/characters/<CHAR_ID>/assets/" --pages --pretty
+
+# PI: list all planets for a character
+python3 $SKILL/scripts/esi_query.py --action pi_planets \
+  --token "$TOKEN" --character-id <CHAR_ID> --pretty
+
+# PI: parsed "needs attention" status per planet
+python3 $SKILL/scripts/esi_query.py --action pi_status \
+  --token "$TOKEN" --character-id <CHAR_ID> --pretty
+
+# Market (public): Jita buy/sell snapshot for one type
+python3 $SKILL/scripts/esi_query.py --action jita_price \
+  --type-id 2393 --pretty
+
+# Market (public): adjusted/average prices for all types
+python3 $SKILL/scripts/esi_query.py --action market_price_bulk --pretty
 ```
 
+<<<<<<< HEAD
 ## Planetary Interaction (PI)
 
 The skill includes high-level PI actions that parse raw ESI data into actionable status reports.
@@ -157,6 +191,14 @@ python3 $SKILL/scripts/esi_query.py --action jita_price --type-id 9832 --pretty
 ```
 
 The `jita_price` action returns lowest sell, highest buy, spread, and order counts for The Forge region.
+=======
+### Action mode parameters
+
+- `--action` supports: `pi_planets`, `pi_planet_detail`, `pi_status`, `market_price_bulk`, `jita_price`
+- `--character-id` is required for PI actions
+- `--planet-id` is required for `pi_planet_detail`
+- `--type-id` is required for `jita_price`
+>>>>>>> 37636f5 (docs: update README for PI action workflow)
 
 ## Dashboard Config
 
@@ -174,6 +216,8 @@ python3 scripts/validate_config.py ~/.openclaw/eve-dashboard-config.json
 ```
 
 See [config/schema.json](config/schema.json) for the full schema.
+
+Endpoint presets for PI and market requests are documented in [config/esi_endpoints.json](config/esi_endpoints.json).
 
 ### Alert Types
 
