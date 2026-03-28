@@ -4,7 +4,7 @@
 Usage:
     python auth_flow.py --client-id <CLIENT_ID> [--char-name <NAME>] [--port 8080]
 
-Stores refresh token to ~/.openclaw/eve-tokens.json
+Stores refresh token to $OPENCLAW_STATE_DIR/eve-tokens.json (default: ~/.openclaw/)
 """
 import argparse
 import base64
@@ -19,7 +19,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-TOKENS_FILE = os.path.expanduser("~/.openclaw/eve-tokens.json")
+TOKENS_FILE = os.path.join(
+    os.environ.get("OPENCLAW_STATE_DIR", os.path.expanduser("~/.openclaw")),
+    "eve-tokens.json",
+)
 
 SCOPES = " ".join([
     "esi-wallet.read_character_wallet.v1",

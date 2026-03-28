@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """EVE ESI token refresh helper.
 
-Reads refresh_token from ~/.openclaw/eve-tokens.json and returns a fresh access_token.
+Reads refresh_token from $OPENCLAW_STATE_DIR/eve-tokens.json (default: ~/.openclaw/) and returns a fresh access_token.
 
 Usage:
     python get_token.py --char main          # prints access token to stdout
@@ -16,7 +16,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-TOKENS_FILE = os.path.expanduser("~/.openclaw/eve-tokens.json")
+TOKENS_FILE = os.path.join(
+    os.environ.get("OPENCLAW_STATE_DIR", os.path.expanduser("~/.openclaw")),
+    "eve-tokens.json",
+)
 
 
 def load_tokens():
