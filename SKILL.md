@@ -1,29 +1,46 @@
 ---
 name: eve-esi
 description: "Query and manage EVE Online characters via the ESI (EVE Swagger Interface) REST API. Use when the user asks about EVE Online character data, wallet balance, ISK transactions, assets, skill queue, skill points, clone locations, implants, fittings, contracts, market orders, mail, industry jobs, killmails, planetary interaction, loyalty points, or any other EVE account management task."
+type: scripts
+includes:
+  - scripts/auth_flow.py
+  - scripts/get_token.py
+  - scripts/esi_query.py
+  - scripts/validate_config.py
+  - config/schema.json
+  - config/example-config.json
+  - config/esi_endpoints.json
+  - references/authentication.md
+  - references/endpoints.md
+auth:
+  method: oauth2_pkce
+  provider: EVE SSO (login.eveonline.com)
+  credential_storage: "~/.openclaw/eve-tokens.json"
+  setup: "Run scripts/auth_flow.py once per character with a valid EVE Client ID. Tokens are stored locally and auto-refreshed by scripts/get_token.py."
+  required_for: "All authenticated ESI endpoints (wallet, assets, skills, PI, industry, etc.). Public endpoints work without auth."
 env:
   - name: EVE_CLIENT_ID
-    description: "EVE Developer Application Client ID (from https://developers.eveonline.com/applications). Optional: only needed if using $ENV: references in your dashboard config instead of passing --client-id to auth_flow.py directly."
+    description: "EVE Developer Application Client ID (from https://developers.eveonline.com/applications). Not needed at runtime — pass directly to auth_flow.py via --client-id. Only set as env var if using $ENV: references in your dashboard config."
     required: false
     sensitive: false
   - name: EVE_TOKEN_MAIN
-    description: "ESI OAuth2 access token for the main character. Optional: scripts auto-manage tokens via ~/.openclaw/eve-tokens.json (written by auth_flow.py). Only set this if using $ENV: references in your dashboard config."
+    description: "ESI OAuth2 access token for the main character. Not needed at runtime — scripts auto-manage tokens via ~/.openclaw/eve-tokens.json (created by auth_flow.py). Only set as env var if using $ENV: references in your dashboard config."
     required: false
     sensitive: true
   - name: EVE_REFRESH_MAIN
-    description: "ESI OAuth2 refresh token for automatic access token renewal. Optional: scripts auto-manage tokens via ~/.openclaw/eve-tokens.json. Only set this if using $ENV: references in your dashboard config."
+    description: "ESI OAuth2 refresh token for automatic access token renewal. Not needed at runtime — scripts auto-manage tokens via ~/.openclaw/eve-tokens.json. Only set as env var if using $ENV: references in your dashboard config."
     required: false
     sensitive: true
   - name: TELEGRAM_BOT_TOKEN
-    description: "Telegram Bot API token for sending alerts and reports."
+    description: "Telegram Bot API token for sending alerts and reports. Only needed if Telegram notifications are configured."
     required: false
     sensitive: true
   - name: TELEGRAM_CHAT_ID
-    description: "Telegram chat ID where notifications are sent."
+    description: "Telegram chat ID where notifications are sent. Only needed if Telegram notifications are configured."
     required: false
     sensitive: false
   - name: DISCORD_WEBHOOK_URL
-    description: "Discord webhook URL for sending alerts and reports."
+    description: "Discord webhook URL for sending alerts and reports. Only needed if Discord notifications are configured."
     required: false
     sensitive: true
 ---
@@ -231,7 +248,7 @@ python scripts/validate_config.py --schema
 ```bash
 SKILL=~/.openclaw/workspace/skills/eve-esi
 TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
-CHAR_ID=$(python3 $SKILL/scripts/get_token.py --char main --json | python3 -c "import sys,json; print(json.load(sys.stdin))" 2>/dev/null)
+CHAR_ID=$(python3 $SKILL/scripts/get_token.py --char main --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('character_id',''))" 2>/dev/null)
 
 # Simple query
 python3 $SKILL/scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/wallet/" --pretty
@@ -287,6 +304,8 @@ python3 $SKILL/scripts/esi_query.py --action incursions --pretty
 ```
 
 ### Threat Assessment Scripts (Workspace)
+
+> **Hinweis:** Die Workspace-Skripte (`threat_query.py`, `cache_threat_data.py`, `cache_market_prices.py`) sind Referenz-Beschreibungen und müssen erst im Agent-Workspace erstellt werden, bevor sie genutzt werden können.
 
 These scripts live in `~/.openclaw/workspace/scripts/` (not in the skill repo):
 

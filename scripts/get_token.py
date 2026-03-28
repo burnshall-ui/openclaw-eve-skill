@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -40,18 +41,23 @@ def refresh_access_token(refresh_token, client_id):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
         print(f"ERROR: Token refresh failed ({e.code}): {body}", file=sys.stderr)
         sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"ERROR: Could not connect to EVE login server: {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
 
 def save_tokens(data):
-    with open(TOKENS_FILE, "w") as f:
+    tmp = TOKENS_FILE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
-    os.chmod(TOKENS_FILE, 0o600)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, TOKENS_FILE)
 
 
 def main():

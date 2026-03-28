@@ -13,7 +13,9 @@ import http.server
 import json
 import os
 import secrets
+import sys
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -61,8 +63,16 @@ def exchange_code(code, verifier, client_id, redirect_uri):
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"ERROR: Token exchange failed ({e.code}): {body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"ERROR: Could not connect to EVE login server: {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
 
 def verify_token(access_token):
@@ -70,8 +80,16 @@ def verify_token(access_token):
         "https://login.eveonline.com/oauth/verify",
         headers={"Authorization": f"Bearer {access_token}"},
     )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"ERROR: Token verification failed ({e.code}): {body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"ERROR: Could not connect to EVE login server: {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
 
 def load_tokens():
@@ -116,7 +134,6 @@ def main():
     )
 
     result = {}
-    server_ready = threading.Event()
 
     class CallbackHandler(http.server.BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):

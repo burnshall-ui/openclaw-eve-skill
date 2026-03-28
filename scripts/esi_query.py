@@ -66,9 +66,8 @@ PI_PRODUCTS: dict[int, str] = {
 # Approximate per-pin capacities for common PI storage structures.
 # These values are used only for quick "needs attention" heuristics.
 PI_STORAGE_CAPACITY_UNITS: dict[int, int] = {
-    2524: 10000,  # common launchpad type in many setups
-    2544: 10000,  # launchpad
-    2256: 12000,  # storage facility (legacy type id in some fits)
+    2562: 10000,  # Launchpad
+    2256: 12000,  # Storage Facility
 }
 
 
@@ -119,6 +118,7 @@ def esi_request(
     page: int | None = None,
     params: dict[str, Any] | None = None,
     allow_404: bool = False,
+    _retry_count: int = 0,
 ) -> tuple[dict | list | str | None, dict]:
     """Make a single ESI request. Returns (parsed_body, headers)."""
     url = build_url(endpoint, page=page, params=params)
@@ -138,7 +138,7 @@ def esi_request(
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             resp_headers = {k.lower(): v for k, v in resp.getheaders()}
             raw = resp.read().decode("utf-8")
             try:
@@ -153,6 +153,9 @@ def esi_request(
         print(f"HTTP {e.code}: {error_body}", file=sys.stderr)
         print(f"Error limit remaining: {remain}, resets in: {reset}s", file=sys.stderr)
         if e.code == 420:
+            if _retry_count >= 3:
+                print("Rate limit retry count exceeded (max 3). Aborting.", file=sys.stderr)
+                sys.exit(1)
             wait = int(reset) if reset.isdigit() else 60
             print(f"Rate limited. Waiting {wait}s...", file=sys.stderr)
             time.sleep(wait)
@@ -164,9 +167,13 @@ def esi_request(
                 page=page,
                 params=params,
                 allow_404=allow_404,
+                _retry_count=_retry_count + 1,
             )
         if allow_404 and e.code == 404:
             return None, {k.lower(): v for k, v in e.headers.items()}
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"Network error: {e.reason}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -247,14 +254,33 @@ def get_route(origin: int, destination: int, flag: str = "secure", avoid: list[i
     """Plan a route between two systems. flag: shortest, secure, insecure."""
     endpoint = f"/route/{origin}/{destination}/"
     params: dict[str, Any] = {"flag": flag}
+    url = build_url(endpoint, params=params)
     if avoid:
-        # ESI accepts avoid as repeated query params
-        avoid_str = ",".join(str(s) for s in avoid)
-        params["avoid"] = avoid_str
-    result, _ = esi_request(endpoint, token=None, params=params)
-    if isinstance(result, list):
-        return result
-    return []
+        avoid_qs = "&".join(f"avoid={s}" for s in avoid)
+        url += "&" + avoid_qs
+
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+    }
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = raw
+            if isinstance(parsed, list):
+                return parsed
+            return []
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        print(f"HTTP {e.code}: {error_body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"Network error: {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
 
 def get_system_info(system_id: int) -> dict:
