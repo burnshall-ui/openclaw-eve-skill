@@ -47,9 +47,15 @@ env:
 
 # Data Handling
 
-This skill communicates exclusively with the official EVE Online ESI API (`esi.evetech.net`) and EVE SSO (`login.eveonline.com`).
-No character data is exfiltrated to third-party servers.
-Optional integrations (Telegram, Discord) are user-configured via environment variables and only transmit alerts defined by the user.
+This skill communicates with the following external services:
+
+- **EVE Online ESI API** (`esi.evetech.net`) — all character and universe data queries
+- **EVE SSO** (`login.eveonline.com`) — OAuth2 authentication and token refresh
+- **zKillboard API** (`zkillboard.com/api/`) — optional, for PVP threat assessment data (public, no auth required)
+- **Telegram Bot API** — optional, user-configured via `TELEGRAM_BOT_TOKEN` for alert notifications
+- **Discord Webhooks** — optional, user-configured via `DISCORD_WEBHOOK_URL` for alert notifications
+
+No character data is sent to third-party servers beyond the above. Telegram/Discord only transmit alerts defined by the user.
 
 # EVE Online ESI
 
