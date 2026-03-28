@@ -16,6 +16,23 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+
+    def _unlock(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock(f):
+        fcntl.flock(f, fcntl.LOCK_EX)
+
+    def _unlock(f):
+        fcntl.flock(f, fcntl.LOCK_UN)
+
 TOKENS_FILE = os.path.join(
     os.environ.get("OPENCLAW_STATE_DIR", os.path.expanduser("~/.openclaw")),
     "eve-tokens.json",
@@ -90,13 +107,28 @@ def main():
         print("Run auth_flow.py --char-name <name> to authenticate.", file=sys.stderr)
         sys.exit(1)
 
-    char = chars[args.char]
-    token_data = refresh_access_token(char["refresh_token"], char["client_id"])
+    # Lock the token file for the entire read-refresh-write cycle.
+    # EVE SSO rotates refresh tokens on each use, so concurrent processes
+    # must not read the same token before the new one is persisted.
+    lock_path = TOKENS_FILE + ".lock"
+    lock_file = open(lock_path, "w")
+    try:
+        _lock(lock_file)
 
-    # Save updated refresh_token (EVE rotates it on each refresh)
-    if "refresh_token" in token_data:
-        chars[args.char]["refresh_token"] = token_data["refresh_token"]
-        save_tokens(tokens)
+        # Re-read under lock to get the freshest state
+        tokens = load_tokens()
+        chars = tokens.get("characters", {})
+        char = chars[args.char]
+
+        token_data = refresh_access_token(char["refresh_token"], char["client_id"])
+
+        # Save updated refresh_token (EVE rotates it on each refresh)
+        if "refresh_token" in token_data:
+            chars[args.char]["refresh_token"] = token_data["refresh_token"]
+            save_tokens(tokens)
+    finally:
+        _unlock(lock_file)
+        lock_file.close()
 
     if args.json:
         print(json.dumps(token_data, indent=2))
