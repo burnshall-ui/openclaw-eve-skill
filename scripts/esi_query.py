@@ -27,6 +27,22 @@ from datetime import datetime, timezone
 from typing import Any
 
 BASE_URL = "https://esi.evetech.net/latest"
+
+
+class ESIError(Exception):
+    """Base exception for ESI API errors."""
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class ESIRateLimitError(ESIError):
+    """Raised when ESI rate limit retries are exhausted."""
+
+
+class ESINetworkError(ESIError):
+    """Raised on network-level failures (DNS, timeout, connection refused)."""
 USER_AGENT = "OpenClaw-ESI-Skill/1.0 (https://github.com/openclaw/openclaw)"
 JITA_REGION_ID = 10000002
 
@@ -86,6 +102,7 @@ def parse_utc_timestamp(value: str | None) -> datetime | None:
         fixed = value.replace("Z", "+00:00")
         return datetime.fromisoformat(fixed).astimezone(timezone.utc)
     except ValueError:
+        print(f"Warning: could not parse timestamp: {value!r}", file=sys.stderr)
         return None
 
 
@@ -154,8 +171,10 @@ def esi_request(
         print(f"Error limit remaining: {remain}, resets in: {reset}s", file=sys.stderr)
         if e.code == 420:
             if _retry_count >= 3:
-                print("Rate limit retry count exceeded (max 3). Aborting.", file=sys.stderr)
-                sys.exit(1)
+                raise ESIRateLimitError(
+                    f"Rate limit retry count exceeded (max 3). Remaining: {remain}, reset: {reset}s",
+                    status_code=420,
+                )
             wait = int(reset) if reset.isdigit() else 60
             print(f"Rate limited. Waiting {wait}s...", file=sys.stderr)
             time.sleep(wait)
@@ -171,10 +190,9 @@ def esi_request(
             )
         if allow_404 and e.code == 404:
             return None, {k.lower(): v for k, v in e.headers.items()}
-        sys.exit(1)
+        raise ESIError(f"HTTP {e.code}: {error_body}", status_code=e.code)
     except urllib.error.URLError as e:
-        print(f"Network error: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise ESINetworkError(f"Network error: {e.reason}")
 
 
 def esi_request_all_pages(
@@ -276,11 +294,9 @@ def get_route(origin: int, destination: int, flag: str = "secure", avoid: list[i
             return []
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8", errors="replace")
-        print(f"HTTP {e.code}: {error_body}", file=sys.stderr)
-        sys.exit(1)
+        raise ESIError(f"HTTP {e.code}: {error_body}", status_code=e.code)
     except urllib.error.URLError as e:
-        print(f"Network error: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise ESINetworkError(f"Network error: {e.reason}")
 
 
 def get_system_info(system_id: int) -> dict:
@@ -632,18 +648,22 @@ def main():
     parser.add_argument("--avoid", type=str, help="Comma-separated system IDs to avoid in route")
     args = parser.parse_args()
 
-    if args.action:
-        result = run_action(args, parser)
-    else:
-        if not args.endpoint:
-            parser.error("--endpoint is required when --action is not used")
-        endpoint = normalize_endpoint(args.endpoint)
-        if args.pages and args.method == "GET":
-            result = esi_request_all_pages(endpoint, token=args.token)
+    try:
+        if args.action:
+            result = run_action(args, parser)
         else:
-            result, headers = esi_request(endpoint, token=args.token, method=args.method, body=args.body)
-            expires = headers.get("expires", "unknown")
-            print(f"Cache expires: {expires}", file=sys.stderr)
+            if not args.endpoint:
+                parser.error("--endpoint is required when --action is not used")
+            endpoint = normalize_endpoint(args.endpoint)
+            if args.pages and args.method == "GET":
+                result = esi_request_all_pages(endpoint, token=args.token)
+            else:
+                result, headers = esi_request(endpoint, token=args.token, method=args.method, body=args.body)
+                expires = headers.get("expires", "unknown")
+                print(f"Cache expires: {expires}", file=sys.stderr)
+    except ESIError as e:
+        print(f"ESI error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     indent = 2 if args.pretty else None
     if isinstance(result, (dict, list)):

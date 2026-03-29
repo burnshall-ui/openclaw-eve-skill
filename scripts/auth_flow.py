@@ -24,6 +24,10 @@ TOKENS_FILE = os.path.join(
     "eve-tokens.json",
 )
 
+class AuthFlowError(Exception):
+    """Raised when the OAuth authentication flow fails."""
+
+
 SCOPES = " ".join([
     "esi-wallet.read_character_wallet.v1",
     "esi-assets.read_assets.v1",
@@ -71,11 +75,9 @@ def exchange_code(code, verifier, client_id, redirect_uri):
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        print(f"ERROR: Token exchange failed ({e.code}): {body}", file=sys.stderr)
-        sys.exit(1)
+        raise AuthFlowError(f"Token exchange failed ({e.code}): {body}")
     except urllib.error.URLError as e:
-        print(f"ERROR: Could not connect to EVE login server: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise AuthFlowError(f"Could not connect to EVE login server: {e.reason}")
 
 
 def verify_token(access_token):
@@ -88,11 +90,9 @@ def verify_token(access_token):
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        print(f"ERROR: Token verification failed ({e.code}): {body}", file=sys.stderr)
-        sys.exit(1)
+        raise AuthFlowError(f"Token verification failed ({e.code}): {body}")
     except urllib.error.URLError as e:
-        print(f"ERROR: Could not connect to EVE login server: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise AuthFlowError(f"Could not connect to EVE login server: {e.reason}")
 
 
 def load_tokens():
@@ -117,6 +117,8 @@ def main():
                         help="Short name to save this character as (e.g. 'main', 'alt1')")
     parser.add_argument("--port", type=int, default=8080,
                         help="Local callback port (default: 8080)")
+    parser.add_argument("--timeout", type=int, default=300,
+                        help="Seconds to wait for browser callback (default: 300)")
     args = parser.parse_args()
 
     verifier, challenge = pkce_pair()
@@ -175,10 +177,14 @@ def main():
     print(f"  ssh -L {args.port}:127.0.0.1:{args.port} user@your-server -N")
     print(f"\nThen open this URL in your browser:")
     print(f"\n  {auth_url}\n")
-    print(f"Waiting for callback on port {args.port}...")
+    print(f"Waiting for callback on port {args.port} (timeout: {args.timeout}s)...")
     print(f"{'='*60}\n")
 
+    timeout_timer = threading.Timer(args.timeout, httpd.shutdown)
+    timeout_timer.daemon = True
+    timeout_timer.start()
     httpd.serve_forever()
+    timeout_timer.cancel()
 
     if not result.get("code"):
         print("ERROR: No auth code received.")
@@ -210,4 +216,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except AuthFlowError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)

@@ -39,11 +39,13 @@ TOKENS_FILE = os.path.join(
 )
 
 
+class TokenError(Exception):
+    """Raised when token operations fail (missing file, refresh failure, etc.)."""
+
+
 def load_tokens():
     if not os.path.exists(TOKENS_FILE):
-        print(f"ERROR: Tokens file not found: {TOKENS_FILE}", file=sys.stderr)
-        print("Run auth_flow.py first to authenticate.", file=sys.stderr)
-        sys.exit(1)
+        raise TokenError(f"Tokens file not found: {TOKENS_FILE}. Run auth_flow.py first to authenticate.")
     with open(TOKENS_FILE) as f:
         return json.load(f)
 
@@ -65,11 +67,9 @@ def refresh_access_token(refresh_token, client_id):
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        print(f"ERROR: Token refresh failed ({e.code}): {body}", file=sys.stderr)
-        sys.exit(1)
+        raise TokenError(f"Token refresh failed ({e.code}): {body}")
     except urllib.error.URLError as e:
-        print(f"ERROR: Could not connect to EVE login server: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise TokenError(f"Could not connect to EVE login server: {e.reason}")
 
 
 def save_tokens(data):
@@ -102,10 +102,11 @@ def main():
         return
 
     if args.char not in chars:
-        print(f"ERROR: Character '{args.char}' not found.", file=sys.stderr)
-        print(f"Available: {', '.join(chars.keys()) or 'none'}", file=sys.stderr)
-        print("Run auth_flow.py --char-name <name> to authenticate.", file=sys.stderr)
-        sys.exit(1)
+        raise TokenError(
+            f"Character '{args.char}' not found. "
+            f"Available: {', '.join(chars.keys()) or 'none'}. "
+            f"Run auth_flow.py --char-name <name> to authenticate."
+        )
 
     # Lock the token file for the entire read-refresh-write cycle.
     # EVE SSO rotates refresh tokens on each use, so concurrent processes
@@ -137,4 +138,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except TokenError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)

@@ -8,6 +8,9 @@ eve-tokens.json
 # Dashboard config (may contain token references)
 eve-dashboard-config.json
 
+# Temp files from atomic writes
+*.tmp
+
 # Python
 __pycache__/
 *.pyc
