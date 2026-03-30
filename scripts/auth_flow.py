@@ -71,7 +71,7 @@ def exchange_code(code, verifier, client_id, redirect_uri):
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
+        body = e.read().decode("utf-8", errors="replace")
         raise AuthFlowError(f"Token exchange failed ({e.code}): {body}")
     except urllib.error.URLError as e:
         raise AuthFlowError(f"Could not connect to EVE login server: {e.reason}")
@@ -86,7 +86,7 @@ def verify_token(access_token):
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
+        body = e.read().decode("utf-8", errors="replace")
         raise AuthFlowError(f"Token verification failed ({e.code}): {body}")
     except urllib.error.URLError as e:
         raise AuthFlowError(f"Could not connect to EVE login server: {e.reason}")

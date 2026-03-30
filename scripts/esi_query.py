@@ -43,7 +43,7 @@ class ESIRateLimitError(ESIError):
 
 class ESINetworkError(ESIError):
     """Raised on network-level failures (DNS, timeout, connection refused)."""
-USER_AGENT = "OpenClaw-ESI-Skill/1.0 (https://github.com/openclaw/openclaw)"
+USER_AGENT = "OpenClaw-ESI-Skill/1.0 (https://github.com/burnshall-ui/openclaw-eve-skill)"
 JITA_REGION_ID = 10000002
 
 # Base PI product mapping (P0 + P1 complete, selected P2-P4 common outputs).
@@ -123,7 +123,7 @@ def build_url(endpoint: str, page: int | None = None, params: dict[str, Any] | N
         query["page"] = page
     if query:
         sep = "&" if "?" in url else "?"
-        url += sep + urllib.parse.urlencode(query)
+        url += sep + urllib.parse.urlencode(query, doseq=True)
     return url
 
 
@@ -217,6 +217,7 @@ def esi_request_all_pages(
         elif page_data is None:
             page_count = 0
         else:
+            all_results.append(page_data)
             page_count = 1
         print(f"  Page {p}/{total_pages} fetched ({page_count} items)", file=sys.stderr)
     return all_results
@@ -246,6 +247,16 @@ def get_universe_planet(planet_id: int) -> dict:
     return {}
 
 
+def get_universe_names(ids: list[int]) -> list[dict]:
+    """Resolve IDs to names using /universe/names/ (POST)."""
+    if not ids:
+        return []
+    result, _ = esi_request("/universe/names/", method="POST", body=json.dumps(ids))
+    if isinstance(result, list):
+        return result
+    return []
+
+
 def get_system_kills(system_ids: list[int] | None = None) -> list:
     """Fetch ship/pod/NPC kills per system (last hour). Optionally filter by system IDs."""
     result, _ = esi_request("/universe/system_kills/", token=None)
@@ -272,31 +283,13 @@ def get_route(origin: int, destination: int, flag: str = "secure", avoid: list[i
     """Plan a route between two systems. flag: shortest, secure, insecure."""
     endpoint = f"/route/{origin}/{destination}/"
     params: dict[str, Any] = {"flag": flag}
-    url = build_url(endpoint, params=params)
     if avoid:
-        avoid_qs = "&".join(f"avoid={s}" for s in avoid)
-        url += "&" + avoid_qs
+        params["avoid"] = avoid
 
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "application/json",
-    }
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8")
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                parsed = raw
-            if isinstance(parsed, list):
-                return parsed
-            return []
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8", errors="replace")
-        raise ESIError(f"HTTP {e.code}: {error_body}", status_code=e.code)
-    except urllib.error.URLError as e:
-        raise ESINetworkError(f"Network error: {e.reason}")
+    result, _ = esi_request(endpoint, params=params, allow_404=True)
+    if isinstance(result, list):
+        return result
+    return []
 
 
 def get_system_info(system_id: int) -> dict:
@@ -523,6 +516,19 @@ def get_pi_status(character_id: int, token: str) -> list[dict]:
     planets = get_pi_planets(character_id=character_id, token=token)
     details: dict[str, dict] = {}
 
+    planet_ids = []
+    for planet in planets:
+        if isinstance(planet, dict) and isinstance(planet.get("planet_id"), int):
+            planet_ids.append(planet["planet_id"])
+
+    # Bulk resolve planet names
+    planet_names = {}
+    if planet_ids:
+        names_data = get_universe_names(planet_ids)
+        for item in names_data:
+            if isinstance(item, dict) and "id" in item and "name" in item:
+                planet_names[item["id"]] = item["name"]
+
     for planet in planets:
         if not isinstance(planet, dict):
             continue
@@ -531,9 +537,8 @@ def get_pi_status(character_id: int, token: str) -> list[dict]:
             continue
 
         detail = get_pi_planet_detail(character_id=character_id, planet_id=planet_id, token=token)
-        planet_meta = get_universe_planet(planet_id)
-        if planet_meta.get("name"):
-            detail["_planet_name"] = planet_meta["name"]
+        if planet_id in planet_names:
+            detail["_planet_name"] = planet_names[planet_id]
         details[str(planet_id)] = detail
 
     return parse_pi_status(planets_data=planets, planet_details=details)

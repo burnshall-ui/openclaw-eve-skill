@@ -39,7 +39,7 @@ def refresh_access_token(refresh_token, client_id):
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
+        body = e.read().decode("utf-8", errors="replace")
         raise TokenError(f"Token refresh failed ({e.code}): {body}")
     except urllib.error.URLError as e:
         raise TokenError(f"Could not connect to EVE login server: {e.reason}")
