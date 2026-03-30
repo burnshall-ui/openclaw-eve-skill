@@ -175,8 +175,7 @@ def main():
     timeout_timer.cancel()
 
     if not result.get("code"):
-        print("ERROR: No auth code received.")
-        return
+        raise AuthFlowError("Timed out waiting for browser callback.")
 
     print("Auth code received. Exchanging for tokens...")
     token_data = exchange_code(result["code"], verifier, args.client_id, redirect_uri)

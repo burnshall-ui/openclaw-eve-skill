@@ -4,8 +4,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import contextmanager
+
+logger = logging.getLogger(__name__)
+
+
+class TokenError(Exception):
+    """Raised when a token store operation cannot be completed."""
 
 if os.name == "nt":
     import msvcrt
@@ -46,7 +53,14 @@ def token_file_lock():
     _ensure_state_dir()
     lock_file = open(_get_lock_file(), "a+")
     try:
-        _lock(lock_file)
+        try:
+            _lock(lock_file)
+        except (IOError, OSError) as exc:
+            lock_file.close()
+            raise TokenError(
+                "Could not acquire token file lock (timed out). "
+                "Another process may be refreshing the token."
+            ) from exc
         yield
     finally:
         _unlock(lock_file)
@@ -58,7 +72,16 @@ def load_tokens() -> dict:
     tokens_file = get_tokens_file()
     if os.path.exists(tokens_file):
         with open(tokens_file, encoding="utf-8") as handle:
-            return json.load(handle)
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            logger.warning(
+                "Token file contained unexpected type %s (expected dict); "
+                "treating as empty. File: %s",
+                type(data).__name__,
+                tokens_file,
+            )
+            return {"characters": {}}
+        return data
     return {"characters": {}}
 
 

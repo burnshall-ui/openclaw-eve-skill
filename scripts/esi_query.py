@@ -43,6 +43,8 @@ class ESIRateLimitError(ESIError):
 
 class ESINetworkError(ESIError):
     """Raised on network-level failures (DNS, timeout, connection refused)."""
+
+
 USER_AGENT = "OpenClaw-ESI-Skill/1.0 (https://github.com/burnshall-ui/openclaw-eve-skill)"
 JITA_REGION_ID = 10000002
 
@@ -521,13 +523,16 @@ def get_pi_status(character_id: int, token: str) -> list[dict]:
         if isinstance(planet, dict) and isinstance(planet.get("planet_id"), int):
             planet_ids.append(planet["planet_id"])
 
-    # Bulk resolve planet names
+    # Bulk resolve planet names (supplemental — failures are non-fatal)
     planet_names = {}
     if planet_ids:
-        names_data = get_universe_names(planet_ids)
-        for item in names_data:
-            if isinstance(item, dict) and "id" in item and "name" in item:
-                planet_names[item["id"]] = item["name"]
+        try:
+            names_data = get_universe_names(planet_ids)
+            for item in names_data:
+                if isinstance(item, dict) and "id" in item and "name" in item:
+                    planet_names[item["id"]] = item["name"]
+        except ESIError as exc:
+            print(f"Warning: could not resolve planet names, using fallback labels: {exc}", file=sys.stderr)
 
     for planet in planets:
         if not isinstance(planet, dict):

@@ -224,9 +224,6 @@ def validate_required_fields(config: dict, result: ValidationResult):
     else:
         for i, char in enumerate(config["characters"]):
             prefix = f"characters[{i}]"
-            for field in ["id", "token", "refresh_token", "client_id", "scopes"]:
-                if field not in char:
-                    result.error(f"{prefix}: required field '{field}' is missing")
             if "scopes" in char and (not isinstance(char["scopes"], list) or len(char["scopes"]) == 0):
                 result.warn(f"{prefix}: 'scopes' is empty — no authenticated endpoint will work")
 

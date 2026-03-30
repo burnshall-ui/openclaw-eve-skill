@@ -253,8 +253,11 @@ python scripts/validate_config.py --schema
 
 ```bash
 SKILL=~/.openclaw/workspace/skills/eve-esi
+# Replace 'main' with your --char-name if you authenticated under a different name.
 TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
-CHAR_ID=$(python3 -c "import json, os, pathlib; p = pathlib.Path(os.environ.get('OPENCLAW_STATE_DIR', os.path.expanduser('~/.openclaw'))) / 'eve-tokens.json'; d = json.loads(p.read_text(encoding='utf-8')); print(d['characters']['main']['character_id'])")
+# get_token.py --char-id prints just the character ID for the named character.
+CHAR_ID=$(python3 $SKILL/scripts/get_token.py --char main --char-id 2>/dev/null) || \
+CHAR_ID=$(python3 -c "import json, os, pathlib; p = pathlib.Path(os.environ.get('OPENCLAW_STATE_DIR', os.path.expanduser('~/.openclaw'))) / 'eve-tokens.json'; d = json.loads(p.read_text(encoding='utf-8')); chars = d.get('characters', {}); char = chars.get('main') or next(iter(chars.values()), None); print(char['character_id'] if char else '')")
 
 # Simple query
 python3 $SKILL/scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/wallet/" --pretty

@@ -101,7 +101,11 @@ def main():
         # Re-read under lock to get the freshest state
         tokens = load_tokens_or_raise()
         chars = tokens.get("characters", {})
-        char = chars[args.char]
+        char = chars.get(args.char)
+        if char is None:
+            raise TokenError(
+                f"Character '{args.char}' was removed before the lock could be acquired."
+            )
         validate_character_metadata(args.char, char)
 
         token_data = refresh_access_token(char["refresh_token"], char["client_id"])
