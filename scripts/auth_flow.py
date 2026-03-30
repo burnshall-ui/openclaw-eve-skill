@@ -19,10 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-TOKENS_FILE = os.path.join(
-    os.environ.get("OPENCLAW_STATE_DIR", os.path.expanduser("~/.openclaw")),
-    "eve-tokens.json",
-)
+from token_store import get_tokens_file, load_tokens, save_tokens_unlocked, token_file_lock
 
 class AuthFlowError(Exception):
     """Raised when the OAuth authentication flow fails."""
@@ -95,20 +92,6 @@ def verify_token(access_token):
         raise AuthFlowError(f"Could not connect to EVE login server: {e.reason}")
 
 
-def load_tokens():
-    if os.path.exists(TOKENS_FILE):
-        with open(TOKENS_FILE) as f:
-            return json.load(f)
-    return {"characters": {}}
-
-
-def save_tokens(data):
-    os.makedirs(os.path.dirname(TOKENS_FILE), exist_ok=True)
-    with open(TOKENS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-    os.chmod(TOKENS_FILE, 0o600)
-
-
 def main():
     parser = argparse.ArgumentParser(description="EVE SSO OAuth2 PKCE auth flow")
     parser.add_argument("--client-id", required=True,
@@ -168,7 +151,12 @@ def main():
             result["code"] = code
             threading.Thread(target=self.server.shutdown).start()
 
-    httpd = http.server.HTTPServer(("127.0.0.1", args.port), CallbackHandler)
+    try:
+        httpd = http.server.HTTPServer(("127.0.0.1", args.port), CallbackHandler)
+    except OSError as e:
+        raise AuthFlowError(
+            f"Could not start callback server on 127.0.0.1:{args.port}: {e}"
+        ) from e
 
     print(f"\n{'='*60}")
     print("EVE SSO Auth Flow")
@@ -199,18 +187,19 @@ def main():
     char_id = char_info["CharacterID"]
     char_name = char_info["CharacterName"]
 
-    tokens = load_tokens()
-    tokens["characters"][args.char_name] = {
-        "character_id": char_id,
-        "character_name": char_name,
-        "client_id": args.client_id,
-        "refresh_token": token_data["refresh_token"],
-    }
-    save_tokens(tokens)
+    with token_file_lock():
+        tokens = load_tokens()
+        tokens["characters"][args.char_name] = {
+            "character_id": char_id,
+            "character_name": char_name,
+            "client_id": args.client_id,
+            "refresh_token": token_data["refresh_token"],
+        }
+        save_tokens_unlocked(tokens)
 
     print(f"\n✓ Authenticated as: {char_name} (ID: {char_id})")
     print(f"✓ Saved as key: '{args.char_name}'")
-    print(f"✓ Tokens stored in: {TOKENS_FILE}")
+    print(f"✓ Tokens stored in: {get_tokens_file()}")
     print(f"\nUsage:")
     print(f"  python get_token.py --char {args.char_name}")
 

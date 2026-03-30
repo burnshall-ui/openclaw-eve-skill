@@ -254,7 +254,7 @@ python scripts/validate_config.py --schema
 ```bash
 SKILL=~/.openclaw/workspace/skills/eve-esi
 TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
-CHAR_ID=$(python3 $SKILL/scripts/get_token.py --char main --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('character_id',''))" 2>/dev/null)
+CHAR_ID=$(python3 -c "import json, os, pathlib; p = pathlib.Path(os.environ.get('OPENCLAW_STATE_DIR', os.path.expanduser('~/.openclaw'))) / 'eve-tokens.json'; d = json.loads(p.read_text(encoding='utf-8')); print(d['characters']['main']['character_id'])")
 
 # Simple query
 python3 $SKILL/scripts/esi_query.py --token "$TOKEN" --endpoint "/characters/$CHAR_ID/wallet/" --pretty

@@ -16,38 +16,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-if sys.platform == "win32":
-    import msvcrt
-
-    def _lock(f):
-        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
-
-    def _unlock(f):
-        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-else:
-    import fcntl
-
-    def _lock(f):
-        fcntl.flock(f, fcntl.LOCK_EX)
-
-    def _unlock(f):
-        fcntl.flock(f, fcntl.LOCK_UN)
-
-TOKENS_FILE = os.path.join(
-    os.environ.get("OPENCLAW_STATE_DIR", os.path.expanduser("~/.openclaw")),
-    "eve-tokens.json",
-)
+from token_store import get_tokens_file, load_tokens, save_tokens_unlocked, token_file_lock
 
 
 class TokenError(Exception):
     """Raised when token operations fail (missing file, refresh failure, etc.)."""
-
-
-def load_tokens():
-    if not os.path.exists(TOKENS_FILE):
-        raise TokenError(f"Tokens file not found: {TOKENS_FILE}. Run auth_flow.py first to authenticate.")
-    with open(TOKENS_FILE) as f:
-        return json.load(f)
 
 
 def refresh_access_token(refresh_token, client_id):
@@ -72,12 +45,25 @@ def refresh_access_token(refresh_token, client_id):
         raise TokenError(f"Could not connect to EVE login server: {e.reason}")
 
 
-def save_tokens(data):
-    tmp = TOKENS_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, TOKENS_FILE)
+def load_tokens_or_raise():
+    tokens_file = get_tokens_file()
+    if not os.path.exists(tokens_file):
+        raise TokenError(f"Tokens file not found: {tokens_file}. Run auth_flow.py first to authenticate.")
+    return load_tokens()
+
+
+def validate_character_metadata(char_name, char_data):
+    missing_fields = [
+        field
+        for field in ("refresh_token", "client_id")
+        if not char_data.get(field)
+    ]
+    if missing_fields:
+        fields = ", ".join(missing_fields)
+        raise TokenError(
+            f"Character '{char_name}' is missing required token metadata: {fields}. "
+            f"Re-run auth_flow.py --char-name {char_name} to refresh the stored entry."
+        )
 
 
 def main():
@@ -90,7 +76,7 @@ def main():
                         help="List all stored characters")
     args = parser.parse_args()
 
-    tokens = load_tokens()
+    tokens = load_tokens_or_raise()
     chars = tokens.get("characters", {})
 
     if args.list:
@@ -111,25 +97,21 @@ def main():
     # Lock the token file for the entire read-refresh-write cycle.
     # EVE SSO rotates refresh tokens on each use, so concurrent processes
     # must not read the same token before the new one is persisted.
-    lock_path = TOKENS_FILE + ".lock"
-    lock_file = open(lock_path, "w")
-    try:
-        _lock(lock_file)
-
+    with token_file_lock():
         # Re-read under lock to get the freshest state
-        tokens = load_tokens()
+        tokens = load_tokens_or_raise()
         chars = tokens.get("characters", {})
         char = chars[args.char]
+        validate_character_metadata(args.char, char)
 
         token_data = refresh_access_token(char["refresh_token"], char["client_id"])
+        if not token_data.get("access_token"):
+            raise TokenError("Token refresh response did not include an access_token.")
 
         # Save updated refresh_token (EVE rotates it on each refresh)
         if "refresh_token" in token_data:
             chars[args.char]["refresh_token"] = token_data["refresh_token"]
-            save_tokens(tokens)
-    finally:
-        _unlock(lock_file)
-        lock_file.close()
+            save_tokens_unlocked(tokens)
 
     if args.json:
         print(json.dumps(token_data, indent=2))

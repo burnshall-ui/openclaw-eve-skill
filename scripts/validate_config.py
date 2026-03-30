@@ -89,6 +89,88 @@ class ValidationResult:
             print("\n✓ Config is valid.", file=sys.stderr)
 
 
+def load_schema() -> dict:
+    """Load the bundled JSON schema."""
+    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def format_path(path: str, key: str) -> str:
+    """Join object paths while keeping root keys readable."""
+    return f"{path}.{key}" if path else key
+
+
+def validate_type(value, expected_type: str) -> bool:
+    """Validate a JSON-schema primitive type."""
+    if expected_type == "object":
+        return isinstance(value, dict)
+    if expected_type == "array":
+        return isinstance(value, list)
+    if expected_type == "string":
+        return isinstance(value, str)
+    if expected_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected_type == "boolean":
+        return isinstance(value, bool)
+    return True
+
+
+def validate_against_schema(schema: dict, value, result: ValidationResult, path: str = ""):
+    """Validate the config against the subset of JSON Schema used by this repo."""
+    expected_type = schema.get("type")
+    if expected_type and not validate_type(value, expected_type):
+        current_path = path or "config"
+        result.error(
+            f"{current_path}: expected {expected_type}, got {type(value).__name__}"
+        )
+        return
+
+    if "enum" in schema and value not in schema["enum"]:
+        current_path = path or "config"
+        allowed = ", ".join(repr(item) for item in schema["enum"])
+        result.error(f"{current_path}: invalid value {value!r} (allowed: {allowed})")
+
+    if isinstance(value, str) and "pattern" in schema:
+        if not re.match(schema["pattern"], value):
+            current_path = path or "config"
+            result.error(
+                f"{current_path}: value {value!r} does not match pattern {schema['pattern']!r}"
+            )
+
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        required_fields = schema.get("required", [])
+
+        for field in required_fields:
+            if field not in value:
+                result.error(f"{format_path(path, field)}: required field is missing")
+
+        if schema.get("additionalProperties", True) is False:
+            for key in value:
+                if key not in properties:
+                    result.error(
+                        f"{format_path(path, key)}: additional property is not allowed"
+                    )
+
+        for key, subschema in properties.items():
+            if key in value:
+                validate_against_schema(subschema, value[key], result, format_path(path, key))
+
+    elif isinstance(value, list):
+        min_items = schema.get("minItems")
+        if min_items is not None and len(value) < min_items:
+            current_path = path or "config"
+            result.error(
+                f"{current_path}: expected at least {min_items} item(s), got {len(value)}"
+            )
+
+        item_schema = schema.get("items")
+        if item_schema:
+            for index, item in enumerate(value):
+                validate_against_schema(item_schema, item, result, f"{path}[{index}]")
+
+
 def resolve_env_value(value: str) -> tuple[str | None, bool]:
     """Resolve $ENV:VAR references. Returns (resolved_value, is_env_ref)."""
     if not isinstance(value, str):
@@ -209,29 +291,31 @@ def validate_scope_coverage(config: dict, result: ValidationResult):
     if not characters:
         return
 
-    # Collect all required scopes
-    needed_scopes: dict[str, list[str]] = {}  # scope -> [reason1, reason2, ...]
-
-    for rule in config.get("alerts", {}).get("rules", []):
-        alert_type = rule.get("type", "")
-        for scope in ALERT_SCOPE_MAP.get(alert_type, []):
-            needed_scopes.setdefault(scope, []).append(f"alert:{alert_type}")
-
-    for tpl in config.get("reports", {}).get("templates", []):
-        tpl_name = tpl.get("name", "")
-        for scope in REPORT_SCOPE_MAP.get(tpl_name, []):
-            needed_scopes.setdefault(scope, []).append(f"report:{tpl_name}")
-
     # Check each character
-    for i, char in enumerate(characters):
+    for char in characters:
         if not char.get("enabled", True):
             continue
 
         char_scopes = set(char.get("scopes", []))
         char_name = char.get("name", f"ID {char.get('id', '?')}")
-
-        # Respect character filter
         char_id = char.get("id")
+        needed_scopes: dict[str, list[str]] = {}
+
+        for rule in config.get("alerts", {}).get("rules", []):
+            filter_ids = set(rule.get("character_filter", []))
+            if filter_ids and char_id not in filter_ids:
+                continue
+            alert_type = rule.get("type", "")
+            for scope in ALERT_SCOPE_MAP.get(alert_type, []):
+                needed_scopes.setdefault(scope, []).append(f"alert:{alert_type}")
+
+        for tpl in config.get("reports", {}).get("templates", []):
+            filter_ids = set(tpl.get("character_filter", []))
+            if filter_ids and char_id not in filter_ids:
+                continue
+            tpl_name = tpl.get("name", "")
+            for scope in REPORT_SCOPE_MAP.get(tpl_name, []):
+                needed_scopes.setdefault(scope, []).append(f"report:{tpl_name}")
 
         for scope, reasons in needed_scopes.items():
             if scope not in char_scopes:
@@ -266,6 +350,7 @@ def validate_config(config: dict) -> ValidationResult:
     """Run all validations and return the result."""
     result = ValidationResult()
 
+    validate_against_schema(load_schema(), config, result)
     validate_required_fields(config, result)
     validate_intervals(config, result)
     validate_alert_types(config, result)
