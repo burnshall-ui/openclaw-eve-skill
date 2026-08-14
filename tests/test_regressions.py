@@ -1,4 +1,6 @@
+import argparse
 import importlib
+import io
 import os
 import sys
 import tempfile
@@ -162,6 +164,94 @@ class GetTokenRegressionTests(unittest.TestCase):
             with mock.patch.object(sys, "argv", ["get_token.py", "--char", "main"]):
                 with self.assertRaises(get_token.TokenError):
                     get_token.main()
+
+
+class EsiQueryWriteGateTests(unittest.TestCase):
+    """State-changing requests must not run without an explicit opt-in."""
+
+    def setUp(self):
+        self.esi_query = import_fresh("esi_query")
+
+    def test_get_is_never_state_changing(self):
+        self.assertFalse(self.esi_query.is_state_changing("GET", "/characters/1/wallet/"))
+
+    def test_documented_bulk_lookups_are_not_state_changing(self):
+        for endpoint in (
+            "/universe/names/",
+            "/characters/affiliation/",
+            "/characters/12345/assets/names/",
+            "/characters/12345/assets/locations/",
+        ):
+            with self.subTest(endpoint=endpoint):
+                self.assertFalse(self.esi_query.is_state_changing("POST", endpoint))
+
+    def test_undocumented_post_put_delete_are_state_changing(self):
+        for method, endpoint in (
+            ("POST", "/characters/12345/contacts/"),
+            ("POST", "/ui/openwindow/marketdetails/"),
+            ("PUT", "/characters/12345/mail/1/"),
+            ("DELETE", "/characters/12345/mail/1/"),
+        ):
+            with self.subTest(method=method, endpoint=endpoint):
+                self.assertTrue(self.esi_query.is_state_changing(method, endpoint))
+
+    def test_main_refuses_write_without_allow_write(self):
+        argv = [
+            "esi_query.py", "--token", "tok",
+            "--endpoint", "/characters/12345/contacts/",
+            "--method", "POST", "--body", "[]",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            with mock.patch.object(self.esi_query, "esi_request") as request:
+                with self.assertRaises(SystemExit):
+                    self.esi_query.main()
+                request.assert_not_called()
+
+    def test_lookalike_endpoint_does_not_bypass_gate(self):
+        # A path merely containing a read-only segment must still be gated.
+        self.assertTrue(
+            self.esi_query.is_state_changing("POST", "/characters/affiliation/evil/")
+        )
+
+
+class EsiQueryTokenSourceTests(unittest.TestCase):
+    """The token must be resolvable without ever landing in argv."""
+
+    def setUp(self):
+        self.esi_query = import_fresh("esi_query")
+
+    def _args(self, **overrides):
+        defaults = {"char": None, "token": None, "token_stdin": False}
+        defaults.update(overrides)
+        return argparse.Namespace(**defaults)
+
+    def test_token_stdin_is_read_from_stdin(self):
+        parser = argparse.ArgumentParser()
+        with mock.patch.object(sys, "stdin", io.StringIO("secret-token\n")):
+            token = self.esi_query.resolve_token(self._args(token_stdin=True), parser)
+        self.assertEqual(token, "secret-token")
+
+    def test_char_resolves_in_process(self):
+        parser = argparse.ArgumentParser()
+        fake = mock.Mock(return_value={"access_token": "fresh-token"})
+        with mock.patch.dict(sys.modules, {"get_token": mock.Mock(resolve_access_token=fake)}):
+            token = self.esi_query.resolve_token(self._args(char="main"), parser)
+        self.assertEqual(token, "fresh-token")
+        fake.assert_called_once_with("main")
+
+    def test_conflicting_token_sources_are_rejected(self):
+        parser = argparse.ArgumentParser()
+        with mock.patch.object(sys, "stderr", io.StringIO()):
+            with self.assertRaises(SystemExit):
+                self.esi_query.resolve_token(self._args(char="main", token="tok"), parser)
+
+    def test_argv_token_warns_about_exposure(self):
+        parser = argparse.ArgumentParser()
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            token = self.esi_query.resolve_token(self._args(token="tok"), parser)
+        self.assertEqual(token, "tok")
+        self.assertIn("argv", stderr.getvalue())
 
 
 if __name__ == "__main__":

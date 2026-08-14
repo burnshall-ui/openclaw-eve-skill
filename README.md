@@ -82,11 +82,9 @@ python3 scripts/get_token.py --list
 ```bash
 SKILL=~/.openclaw/workspace/skills/eve-esi
 
-# Get a fresh access token (auto-refreshes on every call)
-TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
-
-# Wallet balance
-python3 $SKILL/scripts/esi_query.py --token "$TOKEN" \
+# Wallet balance — --char resolves and refreshes the token in-process,
+# so it never reaches the command line, shell history or your logs.
+python3 $SKILL/scripts/esi_query.py --char main \
   --endpoint "/characters/<CHAR_ID>/wallet/" --pretty
 
 # Skill queue
@@ -121,12 +119,11 @@ The skill includes high-level PI actions that parse raw ESI data into actionable
 
 ```bash
 SKILL=~/.openclaw/workspace/skills/eve-esi
-TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
 CHAR_ID=<your_character_id>
 
 # List all PI planets for a character
 python3 $SKILL/scripts/esi_query.py --action pi_planets \
-  --token "$TOKEN" --character-id $CHAR_ID --pretty
+  --char main --character-id $CHAR_ID --pretty
 
 # Full PI status with extractor timers, storage fill, attention flags
 python3 $SKILL/scripts/esi_query.py --action pi_status \
@@ -268,8 +265,7 @@ python3 $SKILL/scripts/esi_query.py --action system_info --system-id 30002537 --
 python3 $SKILL/scripts/esi_query.py --action route_plan --origin 30000142 --destination 30002537 --route-flag secure --pretty
 
 # Character location
-TOKEN=$(python3 $SKILL/scripts/get_token.py --char main)
-python3 $SKILL/scripts/esi_query.py --action character_location --token "$TOKEN" --character-id $CHAR_ID --pretty
+python3 $SKILL/scripts/esi_query.py --action character_location --char main --character-id $CHAR_ID --pretty
 
 # FW systems & incursions
 python3 $SKILL/scripts/esi_query.py --action fw_systems --pretty

@@ -2,22 +2,34 @@
 """EVE ESI API query helper.
 
 Usage (generic endpoint mode):
-    python esi_query.py --token <ACCESS_TOKEN> --endpoint /characters/12345/wallet/
-    python esi_query.py --token <ACCESS_TOKEN> --endpoint /characters/12345/assets/ --pages
-    python esi_query.py --token <ACCESS_TOKEN> --endpoint /characters/12345/contacts/ --method POST --body '[{"contact_id":123,"standing":10}]'
+    python esi_query.py --char main --endpoint /characters/12345/wallet/
+    python esi_query.py --char main --endpoint /characters/12345/assets/ --pages
 
 Usage (high-level PI/market actions):
-    python esi_query.py --action pi_planets --token <ACCESS_TOKEN> --character-id 12345 --pretty
-    python esi_query.py --action pi_planet_detail --token <ACCESS_TOKEN> --character-id 12345 --planet-id 98765 --pretty
-    python esi_query.py --action pi_status --token <ACCESS_TOKEN> --character-id 12345 --pretty
+    python esi_query.py --action pi_planets --char main --pretty
+    python esi_query.py --action pi_planet_detail --char main --planet-id 98765 --pretty
+    python esi_query.py --action pi_status --char main --pretty
     python esi_query.py --action market_price_bulk --pretty
     python esi_query.py --action jita_price --type-id 2393 --pretty
+
+Authentication:
+    --char <name>   refreshes the stored token in-process (recommended; the token
+                    never appears in argv, so `ps` and shell history cannot leak it)
+    --token-stdin   reads the token from the first line of stdin
+    --token <TOK>   accepted for compatibility, but exposes the token via argv
+
+Scope:
+    This skill is read-only by default. GET and the documented bulk-lookup POST
+    endpoints (/universe/names/, /characters/affiliation/, asset name/location
+    resolution) run normally. Any other POST, plus PUT and DELETE, may change
+    account state and is refused unless --allow-write is passed explicitly.
 
 Requires: Python 3.8+ (uses only stdlib)
 """
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -27,6 +39,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 BASE_URL = "https://esi.evetech.net/latest"
+
+# POST endpoints that are read-only bulk lookups: they resolve IDs to data and
+# change no account state. Everything else non-GET is treated as state-changing
+# and requires an explicit --allow-write opt-in.
+READ_ONLY_POST_PATTERNS = (
+    re.compile(r"^/universe/names/?$"),
+    re.compile(r"^/universe/ids/?$"),
+    re.compile(r"^/characters/affiliation/?$"),
+    re.compile(r"^/characters/\d+/assets/names/?$"),
+    re.compile(r"^/characters/\d+/assets/locations/?$"),
+    re.compile(r"^/corporations/\d+/assets/names/?$"),
+    re.compile(r"^/corporations/\d+/assets/locations/?$"),
+)
 
 
 class ESIError(Exception):
@@ -94,6 +119,62 @@ def normalize_endpoint(endpoint: str) -> str:
     if endpoint.startswith("/"):
         return endpoint
     return "/" + endpoint
+
+
+def is_read_only_post(endpoint: str) -> bool:
+    """True if a POST to this endpoint is a documented bulk lookup, not a write."""
+    path = normalize_endpoint(endpoint).split("?", 1)[0]
+    return any(pattern.match(path) for pattern in READ_ONLY_POST_PATTERNS)
+
+
+def is_state_changing(method: str, endpoint: str) -> bool:
+    """True if this request may alter account state and needs --allow-write."""
+    if method == "GET":
+        return False
+    if method == "POST" and is_read_only_post(endpoint):
+        return False
+    return True
+
+
+def resolve_token(args: argparse.Namespace, parser: argparse.ArgumentParser) -> str | None:
+    """Resolve the access token from --char, --token-stdin, or --token.
+
+    --char is preferred: the token is refreshed in-process and never appears in
+    argv, so it cannot leak via `ps` or shell history.
+    """
+    provided = [
+        name for name, value in (
+            ("--char", args.char),
+            ("--token-stdin", args.token_stdin),
+            ("--token", args.token),
+        ) if value
+    ]
+    if len(provided) > 1:
+        parser.error(f"Use only one of {', '.join(provided)}")
+
+    if args.char:
+        try:
+            from get_token import resolve_access_token
+        except ImportError as exc:
+            parser.error(f"--char requires get_token.py alongside this script: {exc}")
+        try:
+            return resolve_access_token(args.char)["access_token"]
+        except Exception as exc:
+            parser.error(f"Could not resolve token for character '{args.char}': {exc}")
+
+    if args.token_stdin:
+        token = sys.stdin.readline().strip()
+        if not token:
+            parser.error("--token-stdin was given but stdin provided no token")
+        return token
+
+    if args.token:
+        print(
+            "Warning: --token puts the access token in argv, where `ps` and shell "
+            "history can expose it. Prefer --char <name> or --token-stdin.",
+            file=sys.stderr,
+        )
+    return args.token
 
 
 def parse_utc_timestamp(value: str | None) -> datetime | None:
@@ -553,7 +634,14 @@ def run_action(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Any
     """Execute high-level action mode."""
     if args.action in {"pi_planets", "pi_planet_detail", "pi_status", "character_location"}:
         if not args.token:
-            parser.error(f"--token is required for action '{args.action}'")
+            parser.error(f"--char or --token is required for action '{args.action}'")
+        if args.character_id is None and args.char:
+            # A stored character key already implies its ID — no need to pass both.
+            try:
+                from get_token import get_character_id
+                args.character_id = get_character_id(args.char)
+            except Exception as exc:
+                parser.error(f"Could not resolve character ID for '{args.char}': {exc}")
         if args.character_id is None:
             parser.error(f"--character-id is required for action '{args.action}'")
 
@@ -625,12 +713,22 @@ def run_action(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Any
 
 def main():
     parser = argparse.ArgumentParser(description="Query EVE ESI API endpoints")
-    parser.add_argument("--token", required=False, help="ESI access token (Bearer)")
+    parser.add_argument("--token", required=False,
+                        help="ESI access token (Bearer). Exposed via ps/shell history — "
+                             "prefer --char or --token-stdin")
+    parser.add_argument("--char", required=False,
+                        help="Stored character key; refreshes the token in-process so it "
+                             "never appears in argv (recommended)")
+    parser.add_argument("--token-stdin", action="store_true",
+                        help="Read the access token from the first line of stdin")
     parser.add_argument("--endpoint", required=False,
                         help="ESI endpoint path, e.g. /characters/12345/wallet/")
     parser.add_argument("--method", default="GET", choices=["GET", "POST", "PUT", "DELETE"],
                         help="HTTP method (default: GET)")
     parser.add_argument("--body", default=None, help="JSON body for POST/PUT requests")
+    parser.add_argument("--allow-write", action="store_true",
+                        help="Required for state-changing requests (PUT, DELETE, and POST to "
+                             "any endpoint that is not a documented bulk lookup)")
     parser.add_argument("--pages", action="store_true",
                         help="Automatically fetch all pages (GET only)")
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
@@ -658,6 +756,8 @@ def main():
     parser.add_argument("--avoid", type=str, help="Comma-separated system IDs to avoid in route")
     args = parser.parse_args()
 
+    args.token = resolve_token(args, parser)
+
     try:
         if args.action:
             result = run_action(args, parser)
@@ -665,6 +765,12 @@ def main():
             if not args.endpoint:
                 parser.error("--endpoint is required when --action is not used")
             endpoint = normalize_endpoint(args.endpoint)
+            if is_state_changing(args.method, endpoint) and not args.allow_write:
+                parser.error(
+                    f"{args.method} {endpoint} may change account state and is outside this "
+                    f"skill's documented read-only scope. Re-run with --allow-write if you "
+                    f"really intend to modify your EVE account."
+                )
             if args.pages and args.method == "GET":
                 result = esi_request_all_pages(endpoint, token=args.token)
             else:
