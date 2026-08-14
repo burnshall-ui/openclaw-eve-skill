@@ -57,6 +57,26 @@ python3 scripts/auth_flow.py --client-id <YOUR_CLIENT_ID> --char-name main
 # Open the printed URL and log in with your EVE account
 ```
 
+**Choose how much access to grant.** Scopes are granted once and stay granted
+until you revoke them, so the default asks for the narrow set:
+
+| Profile | Scopes | Grants access to |
+|---|---|---|
+| `basic` | 7 | Skills, skill queue, clones, implants, location, ship, online status |
+| `pi` **(default)** | 8 | `basic` plus Planetary Interaction |
+| `industry` | 11 | `basic` plus assets, industry jobs, market orders, contracts |
+| `full` | 17 | Everything, **including wallet balance, ISK history and mail** |
+
+```bash
+python3 scripts/auth_flow.py --list-scope-profiles          # exact scopes per profile
+python3 scripts/auth_flow.py --client-id <ID> --scope-profile full
+python3 scripts/auth_flow.py --client-id <ID> --scopes "esi-skills.read_skills.v1"
+```
+
+The flow prints what it is about to request before opening the browser, and EVE
+SSO shows you the same list on its consent screen. Nothing is granted until you
+approve it there.
+
 Tokens land in `~/.openclaw/eve-tokens.json` (`chmod 600`) and rotate on every
 use. Repeat with a different `--char-name` for each alt:
 

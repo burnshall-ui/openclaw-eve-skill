@@ -16,7 +16,7 @@ auth:
   method: oauth2_pkce
   provider: EVE SSO (login.eveonline.com)
   credential_storage: "~/.openclaw/eve-tokens.json"
-  setup: "Run scripts/auth_flow.py once per character with a valid EVE Client ID. Tokens are stored locally and auto-refreshed by scripts/get_token.py."
+  setup: "Run scripts/auth_flow.py once per character with a valid EVE Client ID. Ask the user which scope profile they want first (basic|pi|industry|full, default pi) — do not pick for them. Tokens are stored locally and auto-refreshed by scripts/get_token.py."
   required_for: "All authenticated ESI endpoints (wallet, assets, skills, PI, industry, etc.). Public endpoints work without auth."
 env:
   - name: EVE_CLIENT_ID
@@ -94,6 +94,33 @@ transaction history, complete asset lists, mail contents, contracts, clone and
 implant locations, and current in-space location. Grant only the scopes your
 use case needs — the skill works fine with a narrow scope set, and public
 endpoints need no scopes at all.
+
+## Agent instruction: ask before you authenticate
+
+**Do not choose a scope profile on the user's behalf.** Scopes are granted once
+and stay granted until revoked, so this is the user's decision, not yours.
+
+Before running `auth_flow.py`, show the user the profiles and ask which one
+they want:
+
+| Profile | Scopes | Grants access to |
+|---|---|---|
+| `basic` | 7 | Skills, skill queue, clones, implants, location, ship, online status |
+| `pi` **(default)** | 8 | `basic` plus Planetary Interaction |
+| `industry` | 11 | `basic` plus assets, industry jobs, market orders, contracts |
+| `full` | 17 | Everything, **including wallet balance, ISK history and mail** |
+
+`python3 scripts/auth_flow.py --list-scope-profiles` prints the exact scope
+list for each. `--scopes "<space separated>"` takes an explicit set.
+
+If the user has not expressed a preference, use the default and say so — do not
+silently pick `full` because it is convenient. If a later query fails for lack
+of a scope, report which scope is missing and let the user decide whether to
+re-authenticate with a wider profile.
+
+The final gate is outside this skill: EVE SSO shows the user a consent screen
+listing every requested scope, and nothing is granted until they approve it in
+their browser.
 
 **Token handling.** Access tokens are bearer credentials: anyone holding one can
 read your account until it expires (~20 min). Refresh tokens are long-lived and
