@@ -1,8 +1,16 @@
 # EVE ESI Character Endpoints Reference
 
-Base URL: `https://esi.evetech.net/latest`
+Base URL: `https://esi.evetech.net` — no version segment. Send
+`X-Compatibility-Date: 2026-08-04` on every request; a request without it is
+served the oldest behaviour ESI still supports, not the newest. The old
+`/latest/` and `/v5/` prefixes are deprecated. See
+<https://esi.evetech.net/meta/compatibility-dates> for valid dates.
 
 All authenticated endpoints require `Authorization: Bearer <TOKEN>` header. Replace `{character_id}` with the numeric character ID from SSO verify.
+
+Also send a `User-Agent` that names the application and a way to reach its
+author — CCP uses it to identify traffic and may throttle callers it cannot
+place.
 
 ## Before you use this list: data sensitivity
 

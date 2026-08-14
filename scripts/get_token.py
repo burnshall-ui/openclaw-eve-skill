@@ -31,6 +31,7 @@ import urllib.parse
 import urllib.request
 
 from token_store import get_tokens_file, load_tokens, save_tokens_unlocked, token_file_lock
+from user_agent import USER_AGENT
 
 
 class TokenError(Exception):
@@ -46,7 +47,10 @@ def refresh_access_token(refresh_token, client_id):
     req = urllib.request.Request(
         "https://login.eveonline.com/v2/oauth/token",
         data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
+        },
         method="POST",
     )
     try:

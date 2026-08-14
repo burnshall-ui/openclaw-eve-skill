@@ -6,6 +6,8 @@ includes:
   - scripts/auth_flow.py
   - scripts/get_token.py
   - scripts/esi_query.py
+  - scripts/token_store.py
+  - scripts/user_agent.py
   - scripts/validate_config.py
   - config/schema.json
   - config/example-config.json
@@ -53,8 +55,8 @@ the official EVE SSO, or an optional, user-configured notification sink.
 
 - **EVE Online ESI API** (`esi.evetech.net`) — official EVE Online REST API
   (operated by CCP Games) for all character and universe data queries.
-  Includes bulk lookup endpoints such as `POST /latest/characters/affiliation/`
-  and `POST /latest/universe/names/`, which resolve public numeric IDs
+  Includes bulk lookup endpoints such as `POST /characters/affiliation/`
+  and `POST /universe/names/`, which resolve public numeric IDs
   (character/corp/alliance/type IDs) to public data. These POST bodies never
   contain tokens, credentials, or private account data — only IDs that are
   already public in-game. Authenticated endpoints (wallet, assets, skills,
@@ -142,9 +144,26 @@ a third-party server.
 
 The ESI (EVE Swagger Interface) is the official REST API for EVE Online third-party development.
 
-- Base URL: `https://esi.evetech.net/latest`
-- Spec: `https://esi.evetech.net/latest/swagger.json`
-- API Explorer: <https://developers.eveonline.com/api-explorer>
+- **Base URL**: `https://esi.evetech.net` — no version segment.
+- **Versioning**: send `X-Compatibility-Date: 2026-08-04` on every request. CCP
+  has replaced the old `/latest`, `/legacy` and `/v5` URL prefixes with this
+  header ([dev blog](https://developers.eveonline.com/blog/changing-versions-v42-was-getting-out-of-hand)).
+  A request that omits it does not get the newest behaviour — it gets the
+  *oldest* one ESI still serves. `esi_query.py` sets the header itself; override
+  it with `--compatibility-date` or `EVE_ESI_COMPATIBILITY_DATE`.
+- **Spec**: `https://esi.evetech.net/meta/openapi.json` (OpenAPI 3.1) or
+  `https://esi.evetech.net/meta/openapi-3.0.json` (OpenAPI 3.0). The old
+  `swagger.json` is deprecated and no longer receives new routes
+  ([dev blog](https://developers.eveonline.com/blog/changing-specs-from-swagger-to-openapi)).
+- **Valid compatibility dates**: <https://esi.evetech.net/meta/compatibility-dates>
+- **Changelog**: <https://esi.evetech.net/meta/changelog> — check this before
+  bumping the compatibility date, and adjust for any `is_breaking` entry on an
+  endpoint this skill uses.
+- **API Explorer**: <https://developers.eveonline.com/api-explorer>
+- **User-Agent**: every request identifies the skill and links its source repo,
+  because CCP treats anonymous traffic as grounds for throttling. Set
+  `EVE_ESI_CONTACT` to an email, `discord:name` or `eve:charname` to add the
+  contact CCP would rather have.
 
 ## Skill Location
 
@@ -160,12 +179,21 @@ SKILL=~/.openclaw/workspace/skills/eve-esi
 Tokens are stored in `~/.openclaw/eve-tokens.json` (created by auth_flow.py, chmod 600).
 All scripts (`get_token.py`, `esi_query.py`) read from this file directly — **no env vars are required for normal operation.**
 
-**First-time setup** (once per character):
+**First-time setup** (once per character). The Client ID comes from the user's
+own application at <https://developers.eveonline.com/applications> — it is not
+stored anywhere by this skill, so ask the user for it rather than hunting for
+it. Ask which scope profile they want before running this; do not choose for
+them.
+
 ```bash
+# 0. In the EVE application, the Callback URL must be exactly
+#    http://localhost:8080/callback — the developer portal allows the http
+#    scheme only for the host `localhost` and rejects 127.0.0.1 on save.
 # 1. Set up SSH tunnel on your local PC:
 #    ssh -L 8080:127.0.0.1:8080 user@your-server -N
 # 2. Run auth flow on server (pass Client ID directly):
-python3 ~/.openclaw/workspace/skills/eve-esi/scripts/auth_flow.py --client-id <YOUR_CLIENT_ID> --char-name main
+python3 ~/.openclaw/workspace/skills/eve-esi/scripts/auth_flow.py \
+  --client-id <YOUR_CLIENT_ID> --char-name main --scope-profile <basic|pi|industry|full>
 # 3. Open the shown URL in browser, log in with EVE account
 ```
 
@@ -193,28 +221,43 @@ python3 ~/.openclaw/workspace/skills/eve-esi/scripts/get_token.py --list
 
 For full OAuth2/PKCE details: see `references/authentication.md`.
 
+## Calling ESI directly
+
+The `curl` examples below are reference material for the raw API. Every one of
+them goes through this helper, which sets the two headers ESI expects: a
+compatibility date, so the response contract stays pinned, and a User-Agent, so
+CCP can see who is calling. `esi_query.py` sets both by itself — that is one
+reason it is the preferred path.
+
+```bash
+ESI="https://esi.evetech.net"
+COMPAT="2026-08-04"
+UA="OpenClaw-ESI-Skill/1.3.3 (+https://github.com/burnshall-ui/openclaw-eve-skill)"
+
+esi() { curl -s -H "X-Compatibility-Date: $COMPAT" -H "User-Agent: $UA" "$@"; }
+```
+
 ## Public endpoints (no auth)
 
 ```bash
 # Character public info
-curl -s "https://esi.evetech.net/latest/characters/2114794365/" | python -m json.tool
+esi "$ESI/characters/2114794365/" | python -m json.tool
 
 # Portrait URLs
-curl -s "https://esi.evetech.net/latest/characters/2114794365/portrait/"
+esi "$ESI/characters/2114794365/portrait/"
 
 # Corporation history
-curl -s "https://esi.evetech.net/latest/characters/2114794365/corporationhistory/"
+esi "$ESI/characters/2114794365/corporationhistory/"
 
 # Bulk affiliation lookup
-curl -s -X POST "https://esi.evetech.net/latest/characters/affiliation/" \
+esi -X POST "$ESI/characters/affiliation/" \
   -H "Content-Type: application/json" \
   -d '[2114794365, 95538921]'
 ```
 
 ## Character info (authenticated)
 
-> The `curl` examples below are shown for reference against the raw ESI API.
-> They put the token on a command line, where `ps` and shell history expose it.
+> These put the token on a command line, where `ps` and shell history expose it.
 > For day-to-day use prefer `esi_query.py --char <name>` (see
 > [Using the query script](#using-the-query-script)).
 
@@ -223,84 +266,72 @@ TOKEN="<your_access_token>"
 CHAR_ID="<your_character_id>"
 
 # Online status (scope: esi-location.read_online.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/online/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/online/"
 ```
 
 ## Wallet
 
 ```bash
 # Balance (scope: esi-wallet.read_character_wallet.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/wallet/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/wallet/"
 
 # Journal (paginated)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/wallet/journal/?page=1"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/wallet/journal/?page=1"
 
 # Transactions
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/wallet/transactions/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/wallet/transactions/"
 ```
 
 ## Assets
 
 ```bash
 # All assets (paginated; scope: esi-assets.read_assets.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/assets/?page=1"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/assets/?page=1"
 
 # Resolve item locations
-curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+esi -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '[1234567890, 9876543210]' \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/assets/locations/"
+  "$ESI/characters/$CHAR_ID/assets/locations/"
 
 # Resolve item names
-curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+esi -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '[1234567890]' \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/assets/names/"
+  "$ESI/characters/$CHAR_ID/assets/names/"
 ```
 
 ## Skills
 
 ```bash
 # All trained skills + total SP (scope: esi-skills.read_skills.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/skills/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/skills/"
 
 # Skill queue (scope: esi-skills.read_skillqueue.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/skillqueue/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/skillqueue/"
 
 # Attributes (intelligence, memory, etc.)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/attributes/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/attributes/"
 ```
 
 ## Location and ship
 
 ```bash
 # Current location (scope: esi-location.read_location.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/location/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/location/"
 
 # Current ship (scope: esi-location.read_ship_type.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/ship/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/ship/"
 ```
 
 ## Clones and implants
 
 ```bash
 # Jump clones + home station (scope: esi-clones.read_clones.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/clones/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/clones/"
 
 # Active implants (scope: esi-clones.read_implants.v1)
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://esi.evetech.net/latest/characters/$CHAR_ID/implants/"
+esi -H "Authorization: Bearer $TOKEN" "$ESI/characters/$CHAR_ID/implants/"
 ```
 
 ## More endpoints
@@ -309,7 +340,12 @@ For contracts, fittings, mail, industry, killmails, market orders, mining, plane
 
 ## Dashboard Config
 
-The skill supports a modular dashboard config for alerts, reports, and market tracking. Each user defines what they need in a JSON config file.
+The skill defines and validates a config format for alerts, reports and market
+tracking. It does **not** execute any of it: there is no poller, no scheduler
+and no notification sender in this skill. Do not tell the user their alerts are
+running because a config exists — the config is a description that some other
+automation has to act on. `validate_config.py` checks that a config is well
+formed and that the stored token actually carries the scopes it references.
 
 - **Schema**: [config/schema.json](config/schema.json) — full JSON Schema with all fields, types, and defaults
 - **Example**: [config/example-config.json](config/example-config.json) — ready-to-use template
@@ -388,11 +424,19 @@ printf '%s\n' "$TOKEN" | python3 $SKILL/scripts/esi_query.py --token-stdin --end
 ## Best practices
 
 - **Caching**: respect the `Expires` header; do not poll before it expires.
-- **Error limits**: monitor `X-ESI-Error-Limit-Remain`; back off when low.
+  Polling around the cache is treated as circumventing it and can get you banned.
+- **Error limits**: monitor `X-ESI-Error-Limit-Remain`; back off when low. A 4xx
+  costs five times what a 2xx costs, so validate input before sending it.
+- **Rate limits**: routes under bucket limiting report `X-Ratelimit-Remaining`
+  and answer with `429` plus `Retry-After` once the bucket is empty.
+  `esi_query.py` honours both, and warns once a bucket drops below 20%.
 - **User-Agent**: always set a descriptive User-Agent with contact info.
-- **Rate limits**: some endpoints (mail, contracts) have internal rate limits returning HTTP 520.
 - **Pagination**: check the `X-Pages` response header; iterate with `?page=N`.
-- **Versioning**: use `/latest/` for current stable routes. `/dev/` may change without notice.
+- **Versioning**: do not use URL prefixes. `/latest/`, `/legacy/`, `/dev/` and
+  `/v5/` are deprecated — send the `X-Compatibility-Date` header instead, and
+  pin it to a date you have actually reviewed. `esi_query.py` strips a version
+  prefix if one reaches it anyway.
+- **Scheduling**: stagger periodic jobs rather than firing them all on `*/5`.
 
 ## Threat Assessment & Route Planning
 
@@ -475,11 +519,12 @@ python3 ~/.openclaw/workspace/scripts/cache_threat_data.py --check
 ESI returns numeric type IDs (e.g. for ships, items, skills). Resolve names via:
 
 ```bash
+SKILL=~/.openclaw/workspace/skills/eve-esi
+
 # Single type
-curl -s "https://esi.evetech.net/latest/universe/types/587/"
+python3 $SKILL/scripts/esi_query.py --endpoint "/universe/types/587/" --pretty
 
 # Bulk names (up to 1000 IDs)
-curl -s -X POST "https://esi.evetech.net/latest/universe/names/" \
-  -H "Content-Type: application/json" \
-  -d '[587, 638, 11393]'
+python3 $SKILL/scripts/esi_query.py --endpoint "/universe/names/" \
+  --method POST --body '[587, 638, 11393]' --pretty
 ```

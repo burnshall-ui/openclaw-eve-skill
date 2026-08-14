@@ -20,6 +20,7 @@ import urllib.parse
 import urllib.request
 
 from token_store import get_tokens_file, load_tokens, save_tokens_unlocked, token_file_lock
+from user_agent import USER_AGENT
 
 class AuthFlowError(Exception):
     """Raised when the OAuth authentication flow fails."""
@@ -91,7 +92,10 @@ def exchange_code(code, verifier, client_id, redirect_uri):
     req = urllib.request.Request(
         "https://login.eveonline.com/v2/oauth/token",
         data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
+        },
         method="POST",
     )
     try:
@@ -105,9 +109,15 @@ def exchange_code(code, verifier, client_id, redirect_uri):
 
 
 def verify_token(access_token):
+    # /v2/oauth/verify is what the SSO metadata document at
+    # https://login.eveonline.com/.well-known/oauth-authorization-server names as
+    # the userinfo endpoint; the unversioned /oauth/verify is the older one.
     req = urllib.request.Request(
-        "https://login.eveonline.com/oauth/verify",
-        headers={"Authorization": f"Bearer {access_token}"},
+        "https://login.eveonline.com/v2/oauth/verify",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": USER_AGENT,
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -169,7 +179,14 @@ def main():
 
     verifier, challenge = pkce_pair()
     state = secrets.token_urlsafe(16)
-    redirect_uri = f"http://127.0.0.1:{args.port}/callback"
+    # Must be the literal host `localhost`, not 127.0.0.1: the EVE developer
+    # portal only accepts the http scheme for `localhost` and rejects an IP
+    # address outright, so a callback URL with 127.0.0.1 cannot be registered
+    # in the first place. SSO then matches this string exactly against what is
+    # registered. The callback server below still binds to 127.0.0.1 — that is
+    # the address the SSH tunnel forwards to, and is unrelated to the name the
+    # browser resolves.
+    redirect_uri = f"http://localhost:{args.port}/callback"
 
     auth_url = (
         "https://login.eveonline.com/v2/oauth/authorize/?"

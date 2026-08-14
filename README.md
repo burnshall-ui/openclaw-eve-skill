@@ -27,7 +27,7 @@ stay on your machine.
 | **Threat assessment** | System scoring from ESI kills and jumps combined with zKillboard PVP data. |
 | **Route planning** | Routes annotated with a per-system threat level. |
 | **ESI queries** | Generic helper with pagination, rate-limit handling and error recovery. |
-| **Dashboard config** | Alerts, scheduled reports and price tracking, validated against a JSON Schema. |
+| **Dashboard config** | A validated JSON Schema vocabulary for alerts, reports and price tracking. Defines them; does not run them. |
 
 ## Install
 
@@ -43,8 +43,13 @@ Python 3.8+, standard library only for everything in this repo.
 **Before you start**, register an application at
 [developers.eveonline.com](https://developers.eveonline.com/applications):
 
-1. Callback URL: `http://127.0.0.1:8080/callback`
-2. Select your scopes — Planetary Interaction needs `esi-planets.manage_planets.v1`
+1. Callback URL: `http://localhost:8080/callback`. The portal accepts the `http`
+   scheme only for the host `localhost` — `127.0.0.1` is refused on save.
+2. Enable the scopes you may want under **Enabled Scopes**. A scope profile can
+   only ask for what the application already has enabled, so enabling a scope
+   here does not grant it — it just makes it available to request. Planetary
+   Interaction needs `esi-planets.manage_planets.v1`; to keep `--scope-profile
+   full` usable later, enable all 17 listed under [Scope profiles](#scope-profiles).
 3. Note the **Client ID** (with PKCE there is no client secret to keep)
 
 Then authenticate once per character:
@@ -202,12 +207,21 @@ python3 $SKILL/scripts/esi_query.py --action incursions --pretty
 | ESI `/incursions/` | Active NPC incursions |
 | zKillboard API | PVP kills with value, last 24 h |
 
-The scoring logic and its cache live in the agent workspace
-(`~/.openclaw/workspace/scripts/`), not in this repo — see `SKILL.md`.
+The raw data above is what this skill provides, and the `--action` helpers for
+it work today. The composite *scoring* layer on top — `threat_query.py`,
+`cache_threat_data.py` — is **not written yet**: `SKILL.md` describes the
+interface it should have, as a specification for something you build in your
+agent workspace. Nothing named there ships with this repo.
 
 ## Dashboard config
 
-Automated alerts, scheduled reports and price tracking:
+**What ships here is the config format and its validator — not a runner.** The
+skill has no poller, no scheduler and no code that sends a message anywhere;
+`grep` it for yourself. The tables below are the vocabulary your agent's own
+automation can use, and the validator tells you whether a config is well formed
+and whether your token covers the scopes it asks for. Wiring it to something
+that actually polls on a schedule and delivers to Telegram or Discord is work
+that lives in your agent workspace, and you have to write it.
 
 ```bash
 cp config/example-config.json ~/.openclaw/eve-dashboard-config.json
@@ -251,30 +265,65 @@ Access can be revoked at any time at
 
 ## Reference
 
-### Scopes requested by default
+### Scope profiles
 
-| Scope | Purpose |
-|---|---|
-| `esi-wallet.read_character_wallet.v1` | ISK balance, journal, transactions |
-| `esi-assets.read_assets.v1` | Item inventory |
-| `esi-skills.read_skills.v1` | Trained skills, SP |
-| `esi-skills.read_skillqueue.v1` | Skill queue |
-| `esi-clones.read_clones.v1` | Jump clones, home station |
-| `esi-clones.read_implants.v1` | Active implants |
-| `esi-location.read_location.v1` | Current system and station |
-| `esi-location.read_ship_type.v1` | Current ship |
-| `esi-location.read_online.v1` | Online status |
-| `esi-planets.manage_planets.v1` | PI colonies and extractors |
-| `esi-industry.read_character_jobs.v1` | Industry jobs |
-| `esi-markets.read_character_orders.v1` | Market orders |
-| `esi-contracts.read_character_contracts.v1` | Contracts |
-| `esi-killmails.read_killmails.v1` | Killmails |
-| `esi-characters.read_notifications.v1` | Notifications |
-| `esi-characters.read_fatigue.v1` | Jump fatigue |
-| `esi-mail.read_mail.v1` | EVE mail |
+Scopes are granted once at login and persist until the token is revoked, so the
+login asks for a profile rather than for everything. **The default is `pi` with
+8 scopes** — notably no wallet and no mail. All profiles build on `basic`, and
+`full` contains every other one, but `pi` and `industry` are siblings: choosing
+`industry` does *not* give you the PI scope.
 
-Request only what you actually need — edit `SCOPES` in `auth_flow.py`. Scopes
-are granted once at login and persist until the token is revoked.
+```bash
+python3 scripts/auth_flow.py --list-scope-profiles   # see exactly what each asks for
+python3 scripts/auth_flow.py --client-id <ID> --char-name main --scope-profile full
+```
+
+| Profile | Scopes | Adds |
+|---|---|---|
+| `basic` | 7 | skills, skill queue, clones, implants, location, ship, online status |
+| `pi` *(default)* | 8 | `esi-planets.manage_planets.v1` |
+| `industry` | 11 | assets, industry jobs, market orders, contracts |
+| `full` | 17 | wallet, mail, notifications, killmails, jump fatigue |
+
+`--scopes "<space-separated list>"` overrides the profile entirely. Before it
+opens the browser, `auth_flow.py` prints the exact scope list it is about to
+request.
+
+> **`full` is not every scope ESI has.** It covers the 17 scopes the skill's own
+> high-level features need. [`references/endpoints.md`](references/endpoints.md)
+> documents 37 — the remaining 20 (contacts, fittings, mining, loyalty points,
+> bookmarks, calendar, standings, blueprints, medals, titles, fleet, structure
+> search, and the four `write_*`/`send_mail` ones) are in **no** profile.
+> The raw endpoint mode can address those routes, but ESI will reject them with
+> a missing-scope error unless you requested them explicitly and enabled them on
+> your EVE application. The four write scopes are left out on purpose: this
+> skill is read-only by default.
+>
+> To take a profile and add to it, pass the union yourself — `--scopes` replaces
+> the profile rather than extending it:
+>
+> ```bash
+> python3 scripts/auth_flow.py --list-scope-profiles      # copy the full list
+> python3 scripts/auth_flow.py --client-id <ID> --char-name main \
+>   --scopes "<the 17 from full> esi-fittings.read_fittings.v1 esi-industry.read_character_mining.v1"
+> ```
+
+> Despite its name, `esi-planets.manage_planets.v1` is the scope ESI requires
+> for *reading* PI colony data; this skill never writes to a colony. The name is
+> CCP's, and the real consent gate is the EVE SSO page, which shows you the same
+> list before you approve it.
+
+### ESI compliance
+
+- No versioned URL prefixes. Requests go to `https://esi.evetech.net` and carry
+  `X-Compatibility-Date: 2026-08-04`, per CCP's move away from `/latest` and
+  `/v5`. Override with `--compatibility-date` or `EVE_ESI_COMPATIBILITY_DATE`.
+- Every request — ESI and SSO alike — sends a `User-Agent` naming the skill,
+  its version and this repository. Set `EVE_ESI_CONTACT` to add an email or
+  `discord:name`.
+- `429` responses are retried after `Retry-After`, `420` after the error-limit
+  reset, three attempts at most. A rate limit bucket below 20% warns on stderr.
+- The `Expires` header is surfaced rather than worked around.
 
 ### Action parameters
 
@@ -297,6 +346,7 @@ eve-esi/
 │   ├── get_token.py          # token refresh helper
 │   ├── esi_query.py          # ESI queries + high-level PI/market actions
 │   ├── token_store.py        # locked read/write of the token file
+│   ├── user_agent.py         # the User-Agent every outbound call sends
 │   └── validate_config.py    # dashboard config validator
 ├── config/
 │   ├── schema.json           # JSON Schema for the dashboard config
@@ -328,8 +378,9 @@ pip3 install redis
 redis-cli ping   # → PONG
 ```
 
-The companion script `cache_market_prices.py` lives in the agent workspace, not
-in this repo. It caches under the key schema `eve:market:price:{type_id}`.
+The companion script `cache_market_prices.py` does not exist yet — it is a
+sketch of what you would write in your agent workspace, using the key schema
+`eve:market:price:{type_id}`. Nothing in this repo reads or writes Redis.
 
 </details>
 
