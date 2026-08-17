@@ -13,8 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         # Everything here is standard library only, so the version range is the
-        # only thing worth spending matrix time on.
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        # only thing worth spending matrix time on. 3.10 is the real floor: the
+        # scripts annotate with PEP 604 unions (`str | None`) and do not import
+        # `annotations` from __future__, so they fail to import on 3.9.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
