@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Everything here is standard library only, so the version range is the
+        # only thing worth spending matrix time on.
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Regression tests
+        run: python tests/test_regressions.py -v
+      - name: Byte-compile every script
+        run: python -m compileall -q scripts tests
+
+  config:
+    name: Config schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The example config is what users copy. If it stops validating against
+      # the schema, everyone's first run fails.
+      - name: Validate the shipped example config
+        run: python scripts/validate_config.py config/example-config.json
