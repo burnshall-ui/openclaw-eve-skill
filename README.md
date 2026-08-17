@@ -36,7 +36,7 @@ cd ~/.openclaw/workspace/skills
 git clone https://github.com/burnshall-ui/openclaw-eve-skill eve-esi
 ```
 
-Python 3.8+, standard library only for everything in this repo.
+Python 3.10+, standard library only for everything in this repo.
 
 ## Authenticate
 
@@ -361,7 +361,7 @@ eve-esi/
 
 ### Requirements
 
-- Python 3.8+ — standard library only for core ESI queries
+- Python 3.10+ — standard library only for core ESI queries
 - OpenClaw gateway, for agent integration
 - Redis and the `redis` package — **optional**, only for PI price caching
 
